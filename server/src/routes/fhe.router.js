@@ -1,10 +1,15 @@
 import express from 'express';
 import FHEService from '../services/fhe_service_mock.js';
 import AIService from '../services/ai_service.js';
+import { verifyJWTOrApiKey } from '../middlewares/apikey.middleware.js';
+import { trackApiUsage } from '../middlewares/apikey.middleware.js';
 
 const router = express.Router();
 const fheService = new FHEService();
 const aiService = new AIService();
+
+// Apply API usage tracking to all routes
+router.use(trackApiUsage);
 
 // Initialize services on startup
 let fheInitializationPromise = null;
@@ -87,7 +92,7 @@ router.get('/status', async (req, res) => {
 });
 
 // Encrypt a message
-router.post('/encrypt', ensureFHEInitialized, async (req, res) => {
+router.post('/encrypt', verifyJWTOrApiKey('fhe.encrypt'), ensureFHEInitialized, async (req, res) => {
     try {
         const { message } = req.body;
         
@@ -116,7 +121,7 @@ router.post('/encrypt', ensureFHEInitialized, async (req, res) => {
 });
 
 // Decrypt a message
-router.post('/decrypt', ensureFHEInitialized, async (req, res) => {
+router.post('/decrypt', verifyJWTOrApiKey('fhe.decrypt'), ensureFHEInitialized, async (req, res) => {
     try {
         const { encryptedData } = req.body;
         
@@ -145,7 +150,7 @@ router.post('/decrypt', ensureFHEInitialized, async (req, res) => {
 });
 
 // Perform homomorphic operations
-router.post('/compute', ensureFHEInitialized, async (req, res) => {
+router.post('/compute', verifyJWTOrApiKey('fhe.compute'), ensureFHEInitialized, async (req, res) => {
     try {
         const { operation, inputs } = req.body;
         
@@ -204,7 +209,7 @@ router.get('/capabilities', ensureFHEInitialized, async (req, res) => {
 });
 
 // 🤖 AI-POWERED PRIVACY-PRESERVING CHAT ENDPOINT
-router.post('/ai-chat', ensureFHEInitialized, ensureAIInitialized, async (req, res) => {
+router.post('/ai-chat', verifyJWTOrApiKey('fhe.ai_chat'), ensureFHEInitialized, ensureAIInitialized, async (req, res) => {
     try {
         const { message, operation = 'encrypted_chat', context = {} } = req.body;
         
@@ -281,7 +286,7 @@ router.post('/ai-chat', ensureFHEInitialized, ensureAIInitialized, async (req, r
 });
 
 // 🧮 HOMOMORPHIC OPERATION WITH AI ANALYSIS
-router.post('/compute-with-ai', ensureFHEInitialized, ensureAIInitialized, async (req, res) => {
+router.post('/compute-with-ai', verifyJWTOrApiKey('fhe.compute', 'fhe.ai_chat'), ensureFHEInitialized, ensureAIInitialized, async (req, res) => {
     try {
         const { operation, inputs, originalQuery, context = {} } = req.body;
         

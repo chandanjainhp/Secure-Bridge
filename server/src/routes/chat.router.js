@@ -1,8 +1,13 @@
 import express from 'express';
+import { verifyJWTOrApiKey } from '../middlewares/apikey.middleware.js';
+import { trackApiUsage } from '../middlewares/apikey.middleware.js';
 
 console.log('🤖 Chat router loaded successfully');
 
 const router = express.Router();
+
+// Apply API usage tracking to all routes
+router.use(trackApiUsage);
 
 // Simple test route
 router.get('/test', (req, res) => {
@@ -14,7 +19,7 @@ router.get('/test', (req, res) => {
 const LLM_SERVER_URL = 'http://localhost:1234/v1';
 
 // Proxy chat completions to LLM server
-router.post('/completions', async (req, res) => {
+router.post('/completions', verifyJWTOrApiKey('chat.access', 'chat.completions'), async (req, res) => {
     try {
         console.log('🤖 Proxying chat request to LLM server:', req.body);
         
@@ -52,7 +57,7 @@ router.post('/completions', async (req, res) => {
 });
 
 // Proxy models request to LLM server
-router.get('/models', async (req, res) => {
+router.get('/models', verifyJWTOrApiKey('chat.access'), async (req, res) => {
     try {
         console.log('📋 Fetching models from LLM server');
         

@@ -84,6 +84,29 @@ const userSchema = new Schema({
         type: String                     // Data type: String
         // Used to store JWT refresh tokens for maintaining user sessions
         // Not required as it's only set when user logs in
+    },
+    
+    // ADMIN ROLE FIELD
+    // ================
+    isAdmin: {
+        type: Boolean,
+        default: false                   // Users are not admin by default
+    },
+    
+    // ADMIN LEVEL FIELD (for different admin privileges)
+    // ==================================================
+    adminLevel: {
+        type: String,
+        enum: ['super', 'moderator', 'support'],
+        default: undefined               // Only set for admin users
+    },
+    
+    // ADMIN CREATED BY
+    // ================
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',                     // Reference to admin who created this user
+        default: null
     }
     
 }, {
@@ -135,7 +158,9 @@ userSchema.methods.generateAccessToken = function() {
             _id: this._id,               // User's unique ID
             email: this.email,           // User's email
             username: this.username,     // User's username
-            fullName: this.fullName      // User's full name
+            fullName: this.fullName,     // User's full name
+            isAdmin: this.isAdmin,       // Admin status
+            adminLevel: this.adminLevel  // Admin level if applicable
         },
         // Secret key for signing the token (should come from environment variables)
         process.env.ACCESS_TOKEN_SECRET,
