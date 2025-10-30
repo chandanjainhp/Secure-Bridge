@@ -67,7 +67,37 @@ class ApiKeyService {
         });
 
         if (duplicateCheck) {
-          throw new ApiError(400, "This external API key is already registered");
+          // If the duplicate belongs to the same user, update it instead of creating new
+          if (duplicateCheck.userId.toString() === userId.toString()) {
+            console.log('🔄 Updating existing API key for same user instead of creating duplicate');
+            
+            // Update the existing key with new metadata
+            duplicateCheck.permissions = permissions || duplicateCheck.permissions;
+            duplicateCheck.rateLimit = rateLimit || duplicateCheck.rateLimit;
+            duplicateCheck.updatedAt = new Date();
+            duplicateCheck.lastUsed = new Date();
+            
+            const updatedKey = await duplicateCheck.save();
+            
+            return {
+              success: true,
+              message: 'API key updated successfully (was duplicate)',
+              data: {
+                _id: updatedKey._id,
+                keyPrefix: updatedKey.keyPrefix,
+                name: updatedKey.name,
+                isExternal: updatedKey.isExternal,
+                externalProvider: updatedKey.externalProvider,
+                permissions: updatedKey.permissions,
+                rateLimit: updatedKey.rateLimit,
+                status: updatedKey.status,
+                createdAt: updatedKey.createdAt,
+                updatedAt: updatedKey.updatedAt
+              }
+            };
+          } else {
+            throw new ApiError(400, "This external API key is already registered by another user");
+          }
         }
 
         apiKeyData = {
@@ -77,10 +107,17 @@ class ApiKeyService {
           externalKeyEncrypted: encryptionResult.encrypted,
           encryptionIV: encryptionResult.iv,
           encryptionTag: encryptionResult.tag,
-          keyPrefix: `ext-${provider}`,
+          keyPrefix: `${provider.substring(0, 4)}-****${externalKey.slice(-4)}`,
           hashedKey: crypto.createHash('sha256').update(encryptionResult.encrypted).digest('hex'),
-          key: `ext-${provider}-****${encryptionResult.encrypted.slice(-8)}`
+          key: ApiKeyService._maskExternalKey(externalKey, provider)
         };
+        
+        console.log('🔍 DEBUG: External key data prepared:', {
+          provider,
+          originalKey: externalKey.substring(0, 10) + '...',
+          maskedKey: apiKeyData.key,
+          keyPrefix: apiKeyData.keyPrefix
+        });
       } else {
         // Generate new internal API key
         const keyGeneration = ApiKey.generateKey();
@@ -100,15 +137,26 @@ class ApiKeyService {
       });
       await apiKey.save();
 
+      console.log('🔍 DEBUG: Saved API key to database:', {
+        id: apiKey._id,
+        key: apiKey.key,
+        keyPrefix: apiKey.keyPrefix,
+        isExternal: apiKey.isExternal
+      });
+
       // Return without sensitive data
       const response = apiKey.toObject();
       delete response.hashedKey;
       delete response.externalKeyEncrypted;
+      delete response.encryptionIV;
+      delete response.encryptionTag;
       
-      // Include the actual key only for internal keys and only once
+      // The key field should already contain the masked version for external keys
+      // For internal keys, include the actual key only once
       if (!apiKey.isExternal) {
         response.key = apiKeyData.key;
       }
+      // For external keys, the masked key is already in apiKey.key
 
       return response;
     } catch (error) {
@@ -493,6 +541,80 @@ class ApiKeyService {
       statusCode: apiKey.status === 'active' ? 200 : 401,
       responseTime: 1 // Minimal time for internal test
     };
+  }
+
+  // Get the original external API key (for display purposes only)
+  static async revealExternalApiKey(keyId, userId) {
+    try {
+      const apiKey = await ApiKey.findOne({ 
+        _id: keyId, 
+        userId,
+        isExternal: true,
+        status: 'active'
+      });
+      
+      if (!apiKey) {
+        throw new ApiError(404, "External API key not found");
+      }
+
+      // Decrypt the original key
+      const originalKey = ApiKey.decryptExternalKey({
+        encrypted: apiKey.externalKeyEncrypted,
+        iv: apiKey.encryptionIV,
+        tag: apiKey.encryptionTag
+      });
+
+      // Log access event
+      apiKey.logAuditEvent('revealed', userId, null, null, {
+        reason: 'User requested to view original API key'
+      });
+      await apiKey.save();
+
+      return {
+        success: true,
+        key: originalKey,
+        provider: apiKey.externalProvider
+      };
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(500, `Failed to reveal API key: ${error.message}`);
+    }
+  }
+
+  // Helper method to mask external API keys while preserving format
+  static _maskExternalKey(apiKey, provider) {
+    if (!apiKey || apiKey.length < 8) {
+      return '••••••••';
+    }
+
+    // Provider-specific masking that preserves the format structure
+    switch (provider) {
+      case 'openai':
+        // sk-1234...abcd -> sk-1234••••••••••••••••••••••••••••••••••••••••••••abcd
+        return `${apiKey.substring(0, 7)}${'•'.repeat(Math.max(0, apiKey.length - 11))}${apiKey.slice(-4)}`;
+      
+      case 'anthropic':
+        // sk-ant-api03-... -> sk-ant-api03-••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+        return `${apiKey.substring(0, 15)}${'•'.repeat(Math.max(0, apiKey.length - 19))}${apiKey.slice(-4)}`;
+      
+      case 'google':
+        // AIzaSy... -> AIzaSy••••••••••••••••••••••••••••••••abc
+        return `${apiKey.substring(0, 6)}${'•'.repeat(Math.max(0, apiKey.length - 10))}${apiKey.slice(-4)}`;
+      
+      case 'google_ai_studio':
+        // AIzaSy... -> AIzaSy••••••••••••••••••••••••••••••••abc (same as google)
+        return `${apiKey.substring(0, 6)}${'•'.repeat(Math.max(0, apiKey.length - 10))}${apiKey.slice(-4)}`;
+      
+      case 'azure':
+        // 32 hex chars -> 1234••••••••••••••••••••••••abcd
+        return `${apiKey.substring(0, 4)}${'•'.repeat(Math.max(0, apiKey.length - 8))}${apiKey.slice(-4)}`;
+      
+      default:
+        // Generic masking: show first 4 and last 4 characters
+        const visibleLength = Math.min(4, Math.floor(apiKey.length / 3));
+        const maskedLength = Math.max(0, apiKey.length - (visibleLength * 2));
+        return `${apiKey.substring(0, visibleLength)}${'•'.repeat(maskedLength)}${apiKey.slice(-visibleLength)}`;
+    }
   }
 }
 

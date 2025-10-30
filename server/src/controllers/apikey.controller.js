@@ -199,6 +199,17 @@ class ApiKeyController {
     );
   });
 
+  // Reveal original external API key (requires auth)
+  static revealExternalApiKey = asyncHandler(async (req, res) => {
+    const { keyId } = req.params;
+    
+    const result = await ApiKeyService.revealExternalApiKey(keyId, req.user._id);
+    
+    return res.status(200).json(
+      new ApiResponse(200, result, "External API key revealed successfully")
+    );
+  });
+
   // Validate external API key format (no auth required)
   static validateExternalKeyFormat = asyncHandler(async (req, res) => {
     const { apiKey, provider } = req.body;

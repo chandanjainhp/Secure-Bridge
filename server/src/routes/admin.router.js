@@ -272,6 +272,147 @@ router.get('/activity', verifyJWT, verifyAdmin, async (req, res) => {
     }
 });
 
+// Get comprehensive system health (Admin only)
+router.get('/health', verifyJWT, verifyAdmin, async (req, res) => {
+    try {
+        const healthChecks = [];
+        const services = {};
+        
+        // Check MongoDB health
+        try {
+            const dbHealthResponse = await fetch('http://localhost:8000/health/mongodb');
+            const dbHealth = await dbHealthResponse.json();
+            services.mongodb = {
+                status: dbHealth.connected ? 'healthy' : 'unhealthy',
+                connected: dbHealth.connected,
+                details: dbHealth,
+                lastChecked: new Date().toISOString()
+            };
+            healthChecks.push(dbHealth.connected);
+        } catch (error) {
+            services.mongodb = {
+                status: 'error',
+                connected: false,
+                error: error.message,
+                lastChecked: new Date().toISOString()
+            };
+            healthChecks.push(false);
+        }
+        
+        // Check LLM Server health
+        try {
+            const llmHealthResponse = await fetch('http://localhost:8000/health/llm');
+            const llmHealth = await llmHealthResponse.json();
+            services.llm_server = {
+                status: llmHealth.connected ? 'healthy' : 'unhealthy',
+                connected: llmHealth.connected,
+                url: llmHealth.url,
+                details: llmHealth,
+                lastChecked: new Date().toISOString()
+            };
+            healthChecks.push(llmHealth.connected);
+        } catch (error) {
+            services.llm_server = {
+                status: 'error',
+                connected: false,
+                error: error.message,
+                lastChecked: new Date().toISOString()
+            };
+            healthChecks.push(false);
+        }
+        
+        // Check FHE Service health
+        try {
+            const fheHealthResponse = await fetch('http://localhost:8000/api/v1/fhe/status');
+            const fheHealth = await fheHealthResponse.json();
+            services.fhe_service = {
+                status: fheHealth.data?.fhe?.initialized ? 'healthy' : 'initializing',
+                initialized: fheHealth.data?.fhe?.initialized || false,
+                service: fheHealth.data?.fhe?.service || 'OpenFHE',
+                details: fheHealth,
+                lastChecked: new Date().toISOString()
+            };
+            healthChecks.push(fheHealth.data?.fhe?.initialized || false);
+        } catch (error) {
+            services.fhe_service = {
+                status: 'error',
+                initialized: false,
+                error: error.message,
+                lastChecked: new Date().toISOString()
+            };
+            healthChecks.push(false);
+        }
+        
+        // Check API Server health (self)
+        services.api_server = {
+            status: 'healthy',
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            nodeVersion: process.version,
+            environment: process.env.NODE_ENV || 'development',
+            lastChecked: new Date().toISOString()
+        };
+        healthChecks.push(true);
+        
+        // Overall system health
+        const healthyServices = healthChecks.filter(check => check === true).length;
+        const totalServices = healthChecks.length;
+        const overallStatus = healthyServices === totalServices ? 'healthy' : 
+                             healthyServices > totalServices / 2 ? 'degraded' : 'unhealthy';
+        
+        const systemHealth = {
+            overall: {
+                status: overallStatus,
+                healthy_services: healthyServices,
+                total_services: totalServices,
+                uptime: process.uptime(),
+                timestamp: new Date().toISOString()
+            },
+            services: services,
+            system: {
+                platform: process.platform,
+                architecture: process.arch,
+                nodeVersion: process.version,
+                memoryUsage: {
+                    rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+                    heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+                    heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+                    external: Math.round(process.memoryUsage().external / 1024 / 1024)
+                },
+                cpuUsage: process.cpuUsage()
+            }
+        };
+        
+        res.json({
+            success: true,
+            data: systemHealth,
+            message: "System health retrieved successfully"
+        });
+        
+    } catch (error) {
+        console.error('Error fetching system health:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch system health",
+            error: error.message,
+            data: {
+                overall: {
+                    status: 'error',
+                    healthy_services: 0,
+                    total_services: 0,
+                    timestamp: new Date().toISOString()
+                },
+                services: {},
+                system: {
+                    platform: process.platform,
+                    architecture: process.arch,
+                    nodeVersion: process.version
+                }
+            }
+        });
+    }
+});
+
 // Delete user (Admin only)
 router.delete('/users/:userId', verifyJWT, verifyAdmin, async (req, res) => {
     try {
@@ -301,6 +442,228 @@ router.delete('/users/:userId', verifyJWT, verifyAdmin, async (req, res) => {
         res.status(500).json({
             success: false,
             message: "Failed to delete user",
+            error: error.message
+        });
+    }
+});
+
+// SETTINGS MANAGEMENT ROUTES
+// ===========================
+
+// Get system settings (Admin only)
+router.get('/settings', verifyJWT, verifyAdmin, async (req, res) => {
+    try {
+        const { Settings } = await import("../models/settings.model.js");
+        
+        const settings = await Settings.getSettings();
+        const publicSettings = settings.getPublicSettings();
+        
+        res.json({
+            success: true,
+            data: publicSettings,
+            message: "Settings retrieved successfully"
+        });
+    } catch (error) {
+        console.error('Error fetching settings:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch settings",
+            error: error.message
+        });
+    }
+});
+
+// Update system settings (Admin only)
+router.put('/settings', verifyJWT, verifyAdmin, async (req, res) => {
+    try {
+        const { Settings } = await import("../models/settings.model.js");
+        const updates = req.body;
+        
+        // Remove sensitive fields that shouldn't be updated via this endpoint
+        delete updates._id;
+        delete updates.__v;
+        delete updates.createdAt;
+        delete updates.updatedAt;
+        
+        // Validate required fields if provided
+        if (updates.session_timeout && (updates.session_timeout < 1 || updates.session_timeout > 168)) {
+            return res.status(400).json({
+                success: false,
+                message: "Session timeout must be between 1 and 168 hours"
+            });
+        }
+        
+        if (updates.max_file_size && (updates.max_file_size < 1 || updates.max_file_size > 100)) {
+            return res.status(400).json({
+                success: false,
+                message: "Max file size must be between 1 and 100 MB"
+            });
+        }
+        
+        if (updates.rate_limit_requests && (updates.rate_limit_requests < 10 || updates.rate_limit_requests > 1000)) {
+            return res.status(400).json({
+                success: false,
+                message: "Rate limit requests must be between 10 and 1000"
+            });
+        }
+        
+        if (updates.rate_limit_window && (updates.rate_limit_window < 1 || updates.rate_limit_window > 60)) {
+            return res.status(400).json({
+                success: false,
+                message: "Rate limit window must be between 1 and 60 minutes"
+            });
+        }
+        
+        // Update settings
+        const updatedSettings = await Settings.updateSettings(updates, req.user._id);
+        const publicSettings = updatedSettings.getPublicSettings();
+        
+        res.json({
+            success: true,
+            data: publicSettings,
+            message: "Settings updated successfully"
+        });
+    } catch (error) {
+        console.error('Error updating settings:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to update settings",
+            error: error.message
+        });
+    }
+});
+
+// Reset settings to defaults (Super Admin only)
+router.post('/settings/reset', verifyJWT, verifySuperAdmin, async (req, res) => {
+    try {
+        const { Settings } = await import("../models/settings.model.js");
+        
+        // Delete existing settings and create new defaults
+        await Settings.findByIdAndDelete("system_settings");
+        const defaultSettings = await Settings.getSettings();
+        const publicSettings = defaultSettings.getPublicSettings();
+        
+        res.json({
+            success: true,
+            data: publicSettings,
+            message: "Settings reset to defaults successfully"
+        });
+    } catch (error) {
+        console.error('Error resetting settings:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to reset settings",
+            error: error.message
+        });
+    }
+});
+
+// Get specific setting by key (Admin only)
+router.get('/settings/:key', verifyJWT, verifyAdmin, async (req, res) => {
+    try {
+        const { Settings } = await import("../models/settings.model.js");
+        const { key } = req.params;
+        
+        const settings = await Settings.getSettings();
+        const publicSettings = settings.getPublicSettings();
+        
+        if (!(key in publicSettings)) {
+            return res.status(404).json({
+                success: false,
+                message: "Setting not found"
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                key: key,
+                value: publicSettings[key]
+            },
+            message: "Setting retrieved successfully"
+        });
+    } catch (error) {
+        console.error('Error fetching setting:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch setting",
+            error: error.message
+        });
+    }
+});
+
+// Update specific setting (Admin only)
+router.patch('/settings/:key', verifyJWT, verifyAdmin, async (req, res) => {
+    try {
+        const { Settings } = await import("../models/settings.model.js");
+        const { key } = req.params;
+        const { value } = req.body;
+        
+        if (value === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: "Value is required"
+            });
+        }
+        
+        // Create update object
+        const updates = { [key]: value };
+        
+        const updatedSettings = await Settings.updateSettings(updates, req.user._id);
+        const publicSettings = updatedSettings.getPublicSettings();
+        
+        res.json({
+            success: true,
+            data: {
+                key: key,
+                value: publicSettings[key]
+            },
+            message: "Setting updated successfully"
+        });
+    } catch (error) {
+        console.error('Error updating setting:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to update setting",
+            error: error.message
+        });
+    }
+});
+
+// Get settings history (Super Admin only - for audit trail)
+router.get('/settings/audit/history', verifyJWT, verifySuperAdmin, async (req, res) => {
+    try {
+        const { Settings } = await import("../models/settings.model.js");
+        
+        // In a production app, you'd want to track changes in a separate audit log
+        // For now, we'll just return the current settings with metadata
+        const settings = await Settings.findById("system_settings").populate('lastUpdatedBy', 'email fullName');
+        
+        if (!settings) {
+            return res.status(404).json({
+                success: false,
+                message: "Settings not found"
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: {
+                settings: settings.getPublicSettings(),
+                metadata: {
+                    lastUpdatedBy: settings.lastUpdatedBy,
+                    createdAt: settings.createdAt,
+                    updatedAt: settings.updatedAt,
+                    version: settings.version
+                }
+            },
+            message: "Settings audit information retrieved successfully"
+        });
+    } catch (error) {
+        console.error('Error fetching settings audit:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch settings audit information",
             error: error.message
         });
     }

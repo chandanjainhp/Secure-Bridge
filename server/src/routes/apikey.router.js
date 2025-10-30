@@ -1,6 +1,7 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { ApiKey } from "../models/apikey.model.js";
+import ApiKeyService from "../services/apiKeyService.js";
 import { verifyJWT } from "../middlewares/auth.middle.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -113,8 +114,10 @@ router.post("/", asyncHandler(async (req, res) => {
     rateLimit, 
     expiresAt, 
     ipWhitelist,
+    domainWhitelist,
     externalKey,
-    provider 
+    provider,
+    settings
   } = req.body;
   
   // Auto-generate name if not provided
@@ -131,67 +134,29 @@ router.post("/", asyncHandler(async (req, res) => {
   } else if (!keyName) {
     keyName = `API Key - ${new Date().toLocaleDateString()}`;
   }
-  
-  let apiKeyData;
-  
-  if (externalKey && provider) {
-    // Handle external API key - encrypt it properly
-    const encryptedData = ApiKey.encryptExternalKey(externalKey);
-    
-    apiKeyData = {
-      name: keyName,
-      description: description || `External ${provider} API key`,
-      userId: req.user._id,
-      isExternal: true,
-      externalProvider: provider,
-      externalKeyEncrypted: encryptedData.encrypted,
-      encryptionIV: encryptedData.iv,
-      encryptionTag: encryptedData.tag,
-      keyPrefix: `ext-${provider}`,
-      hashedKey: crypto.createHash('sha256').update(externalKey).digest('hex'),
-      key: `ext-${provider}-${Date.now()}`,
-      permissions: permissions || ["chat.access", "fhe.encrypt", "mcp.connect"],
-      rateLimit: rateLimit || {
-        requestsPerMinute: 100,
-        requestsPerHour: 1000,
-        requestsPerDay: 10000
-      },
-      ipWhitelist: ipWhitelist || [],
-      expiresAt
-    };
-  } else {
-    // Generate new internal API key
-    const { key, keyPrefix, hashedKey } = ApiKey.generateKey();
-    
-    apiKeyData = {
-      name: keyName,
-      description: description || `Internal API key`,
-      userId: req.user._id,
-      key,
-      keyPrefix,
-      hashedKey,
-      isExternal: false,
-      permissions: permissions || ["chat.access", "fhe.encrypt", "mcp.connect"],
-      rateLimit: rateLimit || {
-        requestsPerMinute: 100,
-        requestsPerHour: 1000,
-        requestsPerDay: 10000
-      },
-      ipWhitelist: ipWhitelist || [],
-      expiresAt
-    };
-  }
-  
-  const apiKey = await ApiKey.create(apiKeyData);
-  
-  // Return the API key with the actual key value (only shown once)
-  const response = {
-    ...apiKey.toObject(),
-    key: externalKey ? undefined : apiKeyData.key // Don't expose external key
+
+  const keyData = {
+    name: keyName,
+    description: description || (provider ? `External ${provider} API key` : 'Internal API key'),
+    permissions: permissions || ["chat.access", "fhe.encrypt", "mcp.connect"],
+    rateLimit: rateLimit || {
+      requestsPerMinute: 100,
+      requestsPerHour: 1000,
+      requestsPerDay: 10000
+    },
+    ipWhitelist: ipWhitelist || [],
+    domainWhitelist: domainWhitelist || [],
+    expiresAt,
+    externalKey,
+    provider,
+    settings: settings || {}
   };
   
+  // Use the ApiKeyService to create the API key
+  const apiKey = await ApiKeyService.createApiKey(req.user._id, keyData);
+  
   return res.status(201).json(
-    new ApiResponse(201, response, "API key created successfully")
+    new ApiResponse(201, apiKey, "API key created successfully")
   );
 }));
 
@@ -353,6 +318,45 @@ router.post("/:keyId/test", asyncHandler(async (req, res) => {
   
   return res.status(200).json(
     new ApiResponse(200, testResult, "API key test completed")
+  );
+}));
+
+// Reveal original external API key
+router.post("/:keyId/reveal", asyncHandler(async (req, res) => {
+  const { keyId } = req.params;
+  
+  const apiKey = await ApiKey.findOne({ 
+    _id: keyId, 
+    userId: req.user._id,
+    isExternal: true,
+    status: 'active'
+  });
+
+  if (!apiKey) {
+    throw new ApiError(404, "External API key not found");
+  }
+
+  // Decrypt the original key
+  const originalKey = ApiKey.decryptExternalKey({
+    encrypted: apiKey.externalKeyEncrypted,
+    iv: apiKey.encryptionIV,
+    tag: apiKey.encryptionTag
+  });
+
+  // Log access event
+  apiKey.logAuditEvent('revealed', req.user._id, req.ip, req.get('User-Agent'), {
+    reason: 'User requested to view original API key'
+  });
+  await apiKey.save();
+
+  const result = {
+    success: true,
+    key: originalKey,
+    provider: apiKey.externalProvider
+  };
+  
+  return res.status(200).json(
+    new ApiResponse(200, result, "External API key revealed successfully")
   );
 }));
 

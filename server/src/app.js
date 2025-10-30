@@ -26,7 +26,8 @@ app.use(securityMiddleware.mongoSanitize);
 app.use(securityMiddleware.compression);
 
 // Apply general rate limiting and slow down
-app.use(rateLimiters.general);
+// TEMPORARILY DISABLED for API key access
+// app.use(rateLimiters.general);
 app.use(slowDownMiddleware.general);
 
 // Apply security logging
@@ -56,6 +57,9 @@ app.use(cors({
     'Accept', 
     'Authorization', 
     'X-API-Key',
+    'X-Model',
+    'X-Encryption-Enabled',
+    'x-encryption-enabled',
     'Cache-Control'
   ],
   exposedHeaders: [
@@ -130,7 +134,7 @@ import chatRouter from './routes/chat.router.js';
 import testRouter from './routes/test.router.js';
 import adminRouter from './routes/admin.router.js';
 import apiKeyRouter from './routes/apikey.router.js';
-import mcpRouter from './routes/mcp.router.js';
+// import mcpRoutes from './routes/mcpRoutes.js'; // Commented out - using standalone MCP server
 
 // Log successful imports
 LoggingService.info('✅ All routers imported successfully');
@@ -537,8 +541,8 @@ app.use("/api/v1/api-keys", apiKeyRouter);
 LoggingService.info('🔗 API key router mounted at /api/v1/api-keys');
 
 // Mount MCP router for Model Context Protocol operations
-app.use("/api/v1/mcp", mcpRouter);
-LoggingService.info('🔗 MCP router mounted at /api/v1/mcp');
+// app.use("/api/v1/mcp", mcpRoutes); // Commented out - using standalone MCP server
+// LoggingService.info('🔗 MCP router mounted at /api/v1/mcp');
 
 // Direct debug route (development only)
 if (process.env.NODE_ENV === 'development') {

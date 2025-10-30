@@ -150,7 +150,10 @@ userSchema.methods.isPasswordCorrect = async function(password) {
 // METHOD TO GENERATE ACCESS TOKEN
 // ===============================
 // Creates a JWT access token containing user information
-userSchema.methods.generateAccessToken = function() {
+userSchema.methods.generateAccessToken = function(extendedSession = false) {
+    // Choose expiration time based on whether it's an extended session
+    const expiryTime = extendedSession ? '30d' : (process.env.ACCESS_TOKEN_EXPIRY || '15m');
+    
     // Sign and return a JWT token with user payload
     return jwt.sign(
         {
@@ -166,7 +169,7 @@ userSchema.methods.generateAccessToken = function() {
         process.env.ACCESS_TOKEN_SECRET,
         {
             // Token expiration time
-            expiresIn: process.env.ACCESS_TOKEN_EXPIRY || '15m'
+            expiresIn: expiryTime
         }
     );
 }
@@ -174,7 +177,10 @@ userSchema.methods.generateAccessToken = function() {
 // METHOD TO GENERATE REFRESH TOKEN
 // ================================
 // Creates a JWT refresh token for maintaining user sessions
-userSchema.methods.generateRefreshToken = function() {
+userSchema.methods.generateRefreshToken = function(extendedSession = false) {
+    // Choose expiration time based on whether it's an extended session
+    const expiryTime = extendedSession ? '90d' : (process.env.REFRESH_TOKEN_EXPIRY || '7d');
+    
     // Sign and return a refresh token with minimal payload
     return jwt.sign(
         {
@@ -185,7 +191,7 @@ userSchema.methods.generateRefreshToken = function() {
         process.env.REFRESH_TOKEN_SECRET,
         {
             // Longer expiration time for refresh tokens
-            expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '7d'
+            expiresIn: expiryTime
         }
     );
 }

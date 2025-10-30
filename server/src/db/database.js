@@ -39,10 +39,6 @@ class DatabaseService {
         retryWrites: true,
         retryReads: true,
         
-        // Buffer settings
-        bufferMaxEntries: 0,
-        bufferCommands: false,
-        
         // Heartbeat settings
         heartbeatFrequencyMS: 10000,
         

@@ -57,7 +57,7 @@ const apiKeySchema = new Schema(
     },
     externalProvider: {
       type: String,
-      enum: ['openai', 'anthropic', 'google', 'azure', 'cohere', 'huggingface', 'replicate', 'custom'],
+      enum: ['openai', 'anthropic', 'google', 'google_ai_studio', 'azure', 'cohere', 'huggingface', 'replicate', 'custom'],
       required: function() { return this.isExternal; }
     },
     externalKeyEncrypted: {
@@ -264,7 +264,7 @@ const apiKeySchema = new Schema(
     auditLog: [{
       action: {
         type: String,
-        enum: ['created', 'updated', 'regenerated', 'revoked', 'tested', 'used'],
+        enum: ['created', 'updated', 'regenerated', 'revoked', 'tested', 'used', 'revealed'],
         required: true
       },
       timestamp: { type: Date, default: Date.now },
@@ -315,6 +315,12 @@ apiKeySchema.statics.verifyKey = function(providedKey) {
 
 // Validate external API key format
 apiKeySchema.statics.validateExternalKeyFormat = function(apiKey, provider) {
+  // Add debug logging
+  console.log('🔍 DEBUG: Validating external key format');
+  console.log('  Provider:', provider);
+  console.log('  Key length:', apiKey ? apiKey.length : 'null');
+  console.log('  Key starts with:', apiKey ? apiKey.substring(0, 6) + '...' : 'null');
+  
   const validations = {
     openai: {
       pattern: /^sk-[A-Za-z0-9]{48}$/,
@@ -327,6 +333,10 @@ apiKeySchema.statics.validateExternalKeyFormat = function(apiKey, provider) {
     google: {
       pattern: /^AIza[A-Za-z0-9_-]{35}$/,
       description: 'Google AI keys start with "AIza" and are 39 characters total'
+    },
+    google_ai_studio: {
+      pattern: /^AIza[A-Za-z0-9_-]{35}$/,
+      description: 'Google AI Studio keys start with "AIza" and are 39 characters total'
     },
     azure: {
       pattern: /^[a-f0-9]{32}$/,
@@ -351,16 +361,26 @@ apiKeySchema.statics.validateExternalKeyFormat = function(apiKey, provider) {
   };
 
   const validation = validations[provider];
+  console.log('  Validation object found:', !!validation);
+  console.log('  Available providers:', Object.keys(validations));
+  
   if (!validation) {
+    console.log('❌ Unsupported provider:', provider);
     return { valid: false, message: 'Unsupported provider' };
   }
 
   const isValid = validation.pattern.test(apiKey);
-  return {
+  console.log('  Pattern test result:', isValid);
+  console.log('  Pattern:', validation.pattern.toString());
+  
+  const result = {
     valid: isValid,
     message: isValid ? 'Valid format' : `Invalid format. ${validation.description}`,
     provider
   };
+  
+  console.log('  Final result:', result);
+  return result;
 };
 
 // Encryption utilities for external API keys

@@ -128,7 +128,7 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 // Helper function to generate access and refresh tokens for a user
-async function generateAccessAndRefreshTokens(userId) {
+async function generateAccessAndRefreshTokens(userId, extendedSession = false) {
     try {
         // Find the user by their ID
         const user = await User.findById(userId);
@@ -139,8 +139,8 @@ async function generateAccessAndRefreshTokens(userId) {
         }
 
         // Generate access and refresh tokens using user instance methods
-        const accessToken = user.generateAccessToken();
-        const refreshToken = user.generateRefreshToken();
+        const accessToken = user.generateAccessToken(extendedSession);
+        const refreshToken = user.generateRefreshToken(extendedSession);
 
         // Store the refresh token in the user document
         user.refreshToken = refreshToken;
@@ -160,7 +160,7 @@ async function generateAccessAndRefreshTokens(userId) {
 // Controller function to handle user login
 const login = asyncHandler(async (req, res) => {
     // Extract credentials from request body
-    const { email, username, password } = req.body;
+    const { email, username, password, rememberMe } = req.body;
 
     // Ensure either email or username is provided
     if (!(email || username)) {
@@ -201,8 +201,8 @@ const login = asyncHandler(async (req, res) => {
         throw new ApiError(401, "Incorrect password. Please check your password and try again.");
     }
 
-    // Generate access and refresh tokens
-    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+    // Generate access and refresh tokens (with extended session if rememberMe is true)
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id, rememberMe);
 
     // Fetch user data without sensitive fields
     const loggedInUser = await User.findById(user._id)
@@ -212,6 +212,7 @@ const login = asyncHandler(async (req, res) => {
     const options = {
         httpOnly: true, // Prevents client-side JS from accessing the cookie
         secure: true,   // Ensures cookie is sent over HTTPS only
+        maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000, // 30 days if remember me, otherwise 1 day
     };
 
     // Send response with cookies and user data

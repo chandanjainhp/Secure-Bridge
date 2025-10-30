@@ -15,7 +15,7 @@ class AIService {
             const apiKey = process.env.GEMINI_API_KEY;
             if (apiKey) {
                 this.geminiAI = new GoogleGenerativeAI(apiKey);
-                this.model = this.geminiAI.getGenerativeModel({ model: "gemini-pro" });
+                this.model = this.geminiAI.getGenerativeModel({ model: "gemini-1.5-flash" });
                 console.log('✅ Gemini AI initialized');
             } else {
                 console.log('⚠️ No Gemini API key found - using mock AI responses');

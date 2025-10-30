@@ -1,0 +1,5 @@
+{"apiKeyId":"68a2ec52689bc5185c437dd8","endpoint":"/api/v1/chat/models","level":"info","message":"API Key used","method":"GET","operation":"used","responseTime":124,"statusCode":200,"timestamp":"2025-08-18 14:39:00:390"}
+{"apiKeyId":"68a2ec52689bc5185c437dd8","endpoint":"/api/v1/chat/models","level":"info","message":"API Key used","method":"GET","operation":"used","responseTime":66,"statusCode":200,"timestamp":"2025-08-18 14:39:45:3945"}
+{"apiKeyId":"68a2ec52689bc5185c437dd8","endpoint":"/api/v1/chat/models","level":"info","message":"API Key used","method":"GET","operation":"used","responseTime":166,"statusCode":200,"timestamp":"2025-08-18 14:51:52:5152"}
+{"apiKeyId":"68a2ec52689bc5185c437dd8","endpoint":"/api/v1/chat/models","level":"info","message":"API Key used","method":"GET","operation":"used","responseTime":133,"statusCode":200,"timestamp":"2025-08-18 15:00:48:048"}
+{"apiKeyId":"68a30be385dc59c9570f2f29","endpoint":"/api/v1/chat/completions","level":"info","message":"API Key used","method":"POST","operation":"used","responseTime":1177,"statusCode":200,"timestamp":"2025-08-18 16:48:07:487"}
