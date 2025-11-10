@@ -47,18 +47,18 @@ export const sendWelcomeEmail = async (email, name) => {
 };
 
 // Send password reset request email
-export const sendPasswordResetEmail = async (email, resetURL) => {
+export const sendPasswordResetEmail = async (email, verificationCode) => {
   // Debug log to verify email
   console.log(`Sending password reset request email to: ${email}`); 
   
-  // Debug log to verify the reset URL
-  console.log(`Password reset URL: ${resetURL}`); 
+  // Debug log to verify the verification code
+  console.log(`Password reset code: ${verificationCode}`); 
 
   // Send the email
   return sendEmail({
     to: email,
-    subject: "Reset your password",
-    html: PASSWORD_RESET_REQUEST_TEMPLATE.replace("{resetURL}", resetURL),
+    subject: "Reset your password - Secure Bridge",
+    html: PASSWORD_RESET_REQUEST_TEMPLATE.replace("{verificationCode}", verificationCode),
     category: "Password Reset Request"
   });
 };

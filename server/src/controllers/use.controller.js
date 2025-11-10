@@ -9,7 +9,7 @@ import { User } from "../models/user.model.js";
 // import { uploadOnCloudinary } from "../utils/cloudinary.js";
 // import { request } from "express";
 import jwt from "jsonwebtoken";
-import { sendVerificationEmail, sendWelcomeEmail } from "../email/emails.js";
+import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from "../email/emails.js";
 import crypto from "crypto";
 
 // Define the registerUser controller function
@@ -489,8 +489,8 @@ const verifyEmail = asyncHandler(async (req, res) => {
 // Controller function to resend verification email
 // This function generates a new verification code and sends it via email
 const resendVerificationEmail = asyncHandler(async (req, res) => {
-    // STEP 1: Extract email from request body
-    const { email } = req.body;
+    // STEP 1: Extract email and purpose from request body
+    const { email, purpose } = req.body; // purpose can be 'verification' or 'reset'
 
     // STEP 2: Validate that email is provided
     if (!email) {
@@ -505,30 +505,75 @@ const resendVerificationEmail = asyncHandler(async (req, res) => {
         throw new ApiError(404, "User not found");
     }
 
-    // STEP 5: Check if user is already verified
-    if (user.isVerified) {
+    // STEP 5: For email verification, check if user is already verified
+    if (purpose !== 'reset' && user.isVerified) {
         return res
             .status(200)
             .json(new ApiResponse(200, {}, "Email is already verified"));
     }
 
-    // STEP 6: Generate new verification token
+    // STEP 6: Generate new verification token with 15-minute expiration
     const verificationCode = user.generateVerificationToken();
+    
+    // Set expiration to 15 minutes from now
+    user.verificationTokenExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+    
     await user.save({ validateBeforeSave: false });
 
-    // STEP 7: Send verification email
+    // STEP 7: Send appropriate email based on purpose
     try {
-        await sendVerificationEmail(email, verificationCode);
-        console.log(`New verification email sent to ${email}`);
+        if (purpose === 'reset') {
+            await sendPasswordResetEmail(email, verificationCode);
+            console.log(`Password reset email sent to ${email}`);
+        } else {
+            await sendVerificationEmail(email, verificationCode);
+            console.log(`New verification email sent to ${email}`);
+        }
     } catch (emailError) {
-        console.error('Failed to send verification email:', emailError);
-        throw new ApiError(500, "Failed to send verification email");
+        console.error('Failed to send email:', emailError);
+        throw new ApiError(500, "Failed to send email");
     }
 
     // STEP 8: Return success response
+    const message = purpose === 'reset' 
+        ? "Password reset code sent successfully. Check your email." 
+        : "Verification email sent successfully";
+    
     return res
         .status(200)
-        .json(new ApiResponse(200, {}, "Verification email sent successfully"));
+        .json(new ApiResponse(200, {}, message));
+});
+
+// Reset password without old password (for forgot password flow)
+const resetPassword = asyncHandler(async (req, res) => {
+    // STEP 1: Extract email and new password from request
+    const { email, newPassword } = req.body;
+
+    // STEP 2: Validate inputs
+    if (!email || !newPassword) {
+        throw new ApiError(400, "Email and new password are required");
+    }
+
+    // STEP 3: Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+
+    // STEP 4: Check if user is verified (they must have verified via OTP first)
+    if (!user.isVerified) {
+        throw new ApiError(403, "Please verify your email first before resetting password");
+    }
+
+    // STEP 5: Update password (the pre-save hook will hash it)
+    user.password = newPassword;
+    await user.save({ validateBeforeSave: false });
+
+    // STEP 6: Return success response
+    return res
+        .status(200)
+        .json(new ApiResponse(200, {}, "Password reset successfully. You can now login with your new password."));
 });
 
 export { 
@@ -540,5 +585,6 @@ export {
     getCurrentUser,
     updateAccountDetails,
     verifyEmail,
-    resendVerificationEmail
+    resendVerificationEmail,
+    resetPassword
 };

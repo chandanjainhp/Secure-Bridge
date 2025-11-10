@@ -1,0 +1,253 @@
+# ============================================
+# Secure Bridge - Git Ignore Configuration
+# ============================================
+# This file tells Git which files and folders to ignore
+# Prevents committing sensitive data, dependencies, and build artifacts
+
+# ============================================
+# Node.js Dependencies
+# ============================================
+node_modules/              # All npm/yarn packages
+npm-debug.log*            # npm error logs
+yarn-debug.log*           # Yarn error logs
+yarn-error.log*           # Yarn error logs
+lerna-debug.log*          # Lerna error logs
+pnpm-debug.log*           # pnpm error logs
+.pnpm-store/              # pnpm package cache
+
+# ============================================
+# Environment Variables & Secrets
+# ============================================
+.env                      # Environment variables (contains API keys, secrets)
+.env.local                # Local environment overrides
+.env.development.local    # Development environment variables
+.env.test.local           # Test environment variables
+.env.production.local     # Production environment variables
+.env.*.local              # Any other local env files
+*.env                     # All .env files
+
+# API Keys and Secrets
+secrets/                  # Folder containing secret files
+*.key                     # Private keys
+*.pem                     # Certificate files
+*.cert                    # Certificate files
+*.crt                     # Certificate files
+config/secrets.json       # Secret configuration files
+
+# ============================================
+# Build Output & Distribution
+# ============================================
+dist/                     # Production build output
+build/                    # Build artifacts
+out/                      # Output directory
+*.tsbuildinfo            # TypeScript build info
+
+# Client build files
+client/dist/
+client/build/
+client/.vite/
+client/.turbo/
+
+# Server build files
+server/dist/
+server/build/
+
+# ============================================
+# Cache & Temporary Files
+# ============================================
+.cache/                   # General cache directory
+*.cache                   # Cache files
+.temp/                    # Temporary files
+tmp/                      # Temporary files
+*.tmp                     # Temporary files
+*.swp                     # Vim swap files
+*.swo                     # Vim swap files
+*~                        # Backup files
+.DS_Store                 # macOS folder metadata
+Thumbs.db                 # Windows thumbnail cache
+desktop.ini               # Windows folder config
+
+# ============================================
+# Logs
+# ============================================
+logs/                     # Log directory
+*.log                     # All log files
+npm-debug.log            # npm debug logs
+yarn-debug.log           # Yarn debug logs
+pnpm-debug.log           # pnpm debug logs
+lerna-debug.log          # Lerna debug logs
+server/logs/             # Server logs
+client/logs/             # Client logs
+
+# ============================================
+# IDE & Editor Files
+# ============================================
+# Visual Studio Code
+.vscode/*                 # VS Code settings
+!.vscode/extensions.json  # Keep recommended extensions
+!.vscode/settings.json    # Keep workspace settings (if not sensitive)
+.vscode/settings.local.json
+
+# JetBrains IDEs (WebStorm, IntelliJ, etc.)
+.idea/                    # JetBrains IDE settings
+*.iml                     # IntelliJ module files
+*.iws                     # IntelliJ workspace files
+*.ipr                     # IntelliJ project files
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Atom
+.atom/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ============================================
+# Testing
+# ============================================
+coverage/                 # Test coverage reports
+*.coverage                # Coverage files
+.nyc_output/             # NYC coverage output
+junit.xml                # JUnit test results
+test-results/            # Test result files
+.jest-cache/             # Jest cache
+
+# ============================================
+# Database Files
+# ============================================
+*.sqlite                  # SQLite database files
+*.sqlite3                 # SQLite database files
+*.db                      # Database files
+*.db-shm                  # SQLite shared memory
+*.db-wal                  # SQLite write-ahead log
+data/                     # Local database data
+mongodb-data/            # MongoDB data directory
+
+# ============================================
+# OS-Specific Files
+# ============================================
+# macOS
+.DS_Store                 # macOS folder settings
+.AppleDouble             # macOS resource forks
+.LSOverride              # macOS folder view settings
+._*                      # macOS metadata files
+.Spotlight-V100          # Spotlight metadata
+.Trashes                 # Trash files
+
+# Windows
+Thumbs.db                # Windows thumbnail cache
+ehthumbs.db              # Windows thumbnail cache
+Desktop.ini              # Windows folder config
+$RECYCLE.BIN/            # Windows recycle bin
+*.lnk                    # Windows shortcuts
+
+# Linux
+*~                       # Backup files
+.directory               # KDE directory settings
+.Trash-*/                # Trash folders
+
+# ============================================
+# Package Manager Locks (Optional - Uncomment to ignore)
+# ============================================
+# Note: It's generally recommended to commit lock files
+# but you can ignore them if you prefer flexible versions
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+# bun.lockb
+
+# ============================================
+# Frontend Specific (React/Vite)
+# ============================================
+# Vite
+.vite/                   # Vite cache
+vite.config.*.timestamp-*
+
+# React
+.react/                  # React cache
+
+# Static files (if generated)
+client/public/uploads/   # User uploaded files
+client/public/temp/      # Temporary files
+
+# ============================================
+# Backend Specific (Node.js/Express)
+# ============================================
+# Uploaded files
+server/uploads/          # User uploads
+server/public/uploads/   # Public uploads
+server/temp/             # Temporary files
+
+# Session files
+sessions/                # Session storage
+*.session               # Session files
+
+# ============================================
+# Encryption & Security
+# ============================================
+# FHE (Fully Homomorphic Encryption) files
+*.wasm.map              # WebAssembly source maps (optional)
+fhe/generated/          # Generated FHE keys
+*.privatekey            # Private encryption keys
+*.publickey             # Public encryption keys (if sensitive)
+
+# ============================================
+# Docker
+# ============================================
+.docker/                 # Docker build context
+docker-compose.override.yml  # Local docker overrides
+
+# ============================================
+# Misc
+# ============================================
+.vercel                  # Vercel deployment
+.netlify                 # Netlify deployment
+.next/                   # Next.js build
+.nuxt/                   # Nuxt.js build
+.docusaurus/             # Docusaurus build
+.serverless/             # Serverless framework
+.fusebox/                # FuseBox cache
+.dynamodb/               # DynamoDB local
+.tern-port               # Tern port file
+.vuepress/dist          # VuePress build
+.yarn/cache             # Yarn cache
+.yarn/unplugged         # Yarn unplugged
+.yarn/build-state.yml   # Yarn build state
+.yarn/install-state.gz  # Yarn install state
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Archive files (usually not needed in repo)
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# ============================================
+# Project-Specific
+# ============================================
+# Add any project-specific files to ignore here
+# Example: local configuration, test data, etc.
+
+# Local development files
+dev-notes.md
+TODO.local.md
+scratch/
+
+# Large files that shouldn't be in Git
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.iso
+
+# Generated documentation (if auto-generated)
+# docs/generated/

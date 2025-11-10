@@ -87,26 +87,23 @@ export const PASSWORD_RESET_REQUEST_TEMPLATE = `
     </p>
     
     <p style="margin-bottom: 30px; font-size: 16px; color: #4a5568;">
-      To reset your password and regain access to your encrypted conversations, click the button below:
+      Enter this 6-digit code to reset your password:
     </p>
     
     <div style="text-align: center; margin: 40px 0;">
-      <a href="{resetURL}" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 15px rgba(240, 147, 251, 0.4); transition: transform 0.2s;">
-        Reset My Password 🔐
-      </a>
+      <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 20px; border-radius: 12px; display: inline-block;">
+        <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: white; font-family: 'Courier New', monospace;">{verificationCode}</span>
+      </div>
     </div>
     
     <div style="background-color: #fff5f5; padding: 20px; border-radius: 8px; border-left: 4px solid #f56565; margin: 30px 0;">
       <p style="margin: 0; font-size: 14px; color: #742a2a;">
-        <strong>Security Alert:</strong> This reset link expires in <strong>1 hour</strong>. After reset, you'll need to re-establish encryption keys for your conversations.
+        <strong>Security Alert:</strong> This reset code expires in <strong>15 minutes</strong>. After reset, you'll need to re-establish encryption keys for your conversations.
       </p>
     </div>
     
     <p style="font-size: 14px; color: #718096; margin: 20px 0;">
-      If the button doesn't work, copy and paste this URL into your browser:
-    </p>
-    <p style="font-size: 12px; color: #a0aec0; word-break: break-all; background-color: #f7fafc; padding: 10px; border-radius: 4px; font-family: 'Courier New', monospace;">
-      {resetURL}
+      If you didn't request a password reset, please contact our security team immediately.
     </p>
     
     <hr style="border: none; height: 1px; background-color: #e2e8f0; margin: 30px 0;">

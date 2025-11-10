@@ -12,7 +12,8 @@ import {
     getCurrentUser,
     updateAccountDetails,
     verifyEmail,
-    resendVerificationEmail
+    resendVerificationEmail,
+    resetPassword
     
 } from "../controllers/use.controller.js";
 import { upload } from "../middlewares/multer.middleware.js";
@@ -52,6 +53,8 @@ router.route("/login").post(login);
 router.route("/verify-email").post(verifyEmail);
 // POST /resend-verification - Resend verification email
 router.route("/resend-verification").post(resendVerificationEmail);
+// POST /reset-password - Reset password without old password (for forgot password flow)
+router.route("/reset-password").post(resetPassword);
 
 // SECURED ROUTES - These routes require authentication
 // POST /logout - This route handles user logout (requires valid JWT token)
@@ -60,7 +63,7 @@ router.route("/refresh-token").post(refreshAccessToken)
 
 // Additional secured routes
 router.route("/me").get(verifyJWT, getCurrentUser)
-router.route("/change-password").patch(verifyJWT, changeCurrentPassword)
+router.route("/change-password").post(verifyJWT, changeCurrentPassword).patch(verifyJWT, changeCurrentPassword)
 router.route("/update-account").patch(verifyJWT, updateAccountDetails)
 
 // DEVELOPMENT/TESTING ROUTES (only available in development mode)
