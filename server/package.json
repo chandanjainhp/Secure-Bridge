@@ -17,10 +17,10 @@
     "dev:mcp-only": "nodemon src/server-mcp.js",
     "dev:fhe-mcp": "nodemon --exec \"node --loader ts-node/esm\" src/fhe-mcp-server.ts",
     "dev:fhe-http": "nodemon src/fhe-mcp-http-wrapper.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:mcp": "jest src/tests/mcp.test.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "test:mcp": "node --experimental-vm-modules node_modules/jest/bin/jest.js src/tests/mcp.test.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
@@ -49,6 +49,7 @@
     "@tailwindcss/typography": "^0.5.16",
     "@types/react": "^19.1.11",
     "@types/react-dom": "^19.1.8",
+    "@upstash/redis": "^1.35.6",
     "@vitejs/plugin-react": "^5.0.1",
     "ai": "^5.0.24",
     "autoprefixer": "^10.4.21",
@@ -70,7 +71,7 @@
     "helmet": "^7.1.0",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.2",
-    "mongodb": "^6.18.0",
+    "mongodb": "^6.21.0",
     "mongoose": "^8.5.1",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
@@ -101,27 +102,5 @@
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
-  },
-  "jest": {
-    "testEnvironment": "node",
-    "collectCoverageFrom": [
-      "src/**/*.js",
-      "!src/index.js",
-      "!src/scripts/**",
-      "!src/config/**"
-    ],
-    "coverageDirectory": "coverage",
-    "coverageReporters": [
-      "text",
-      "lcov",
-      "html"
-    ],
-    "testMatch": [
-      "**/__tests__/**/*.test.js",
-      "**/?(*.)+(spec|test).js"
-    ],
-    "setupFilesAfterEnv": [
-      "<rootDir>/src/tests/setup.js"
-    ]
   }
 }

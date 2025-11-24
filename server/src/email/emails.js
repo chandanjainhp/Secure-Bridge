@@ -76,3 +76,14 @@ export const sendResetSuccessEmail = async (email) => {
   });
 };
 
+// Send subscription confirmation email for newsletter
+export const sendSubscriptionEmail = async (email) => {
+  console.log(`Sending subscription confirmation to ${email}...`);
+  return sendEmail({
+    to: email,
+    subject: 'Subscribed to Secure Bridge updates',
+    html: `<h2>Thanks for subscribing to Secure Bridge updates</h2><p>You'll receive the latest security features, product releases, and privacy insights at <strong>${email}</strong>.</p>`,
+    category: 'Subscription Confirmation'
+  });
+};
+

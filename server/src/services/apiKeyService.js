@@ -59,61 +59,76 @@ class ApiKeyService {
           throw new ApiError(400, validation.message);
         }
 
-        // Check for duplicate external keys
-        const encryptionResult = ApiKey.encryptExternalKey(externalKey);
-        const duplicateCheck = await ApiKey.findOne({
-          externalKeyEncrypted: encryptionResult.encrypted,
-          status: { $ne: 'revoked' }
+        // Generate masked key FIRST to check for duplicates
+        const maskedKey = ApiKeyService._maskExternalKey(externalKey, provider);
+        
+        // Check for duplicate masked keys (including revoked ones to prevent re-add)
+        const maskedKeyDuplicate = await ApiKey.findOne({
+          key: maskedKey
         });
 
-        if (duplicateCheck) {
-          // If the duplicate belongs to the same user, update it instead of creating new
-          if (duplicateCheck.userId.toString() === userId.toString()) {
-            console.log('🔄 Updating existing API key for same user instead of creating duplicate');
-            
-            // Update the existing key with new metadata
-            duplicateCheck.permissions = permissions || duplicateCheck.permissions;
-            duplicateCheck.rateLimit = rateLimit || duplicateCheck.rateLimit;
-            duplicateCheck.updatedAt = new Date();
-            duplicateCheck.lastUsed = new Date();
-            
-            const updatedKey = await duplicateCheck.save();
-            
-            return {
-              success: true,
-              message: 'API key updated successfully (was duplicate)',
-              data: {
-                _id: updatedKey._id,
-                keyPrefix: updatedKey.keyPrefix,
-                name: updatedKey.name,
-                isExternal: updatedKey.isExternal,
-                externalProvider: updatedKey.externalProvider,
-                permissions: updatedKey.permissions,
-                rateLimit: updatedKey.rateLimit,
-                status: updatedKey.status,
-                createdAt: updatedKey.createdAt,
-                updatedAt: updatedKey.updatedAt
-              }
-            };
+        if (maskedKeyDuplicate) {
+          // Found an existing key with the same masked value
+          if (maskedKeyDuplicate.userId.toString() === userId.toString()) {
+            // Same user trying to re-add their own key
+            if (maskedKeyDuplicate.status === 'revoked') {
+              console.log('🔄 Reactivating previously revoked API key for same user');
+              
+              // Reactivate the existing key instead of creating new
+              maskedKeyDuplicate.status = 'active';
+              maskedKeyDuplicate.permissions = permissions || maskedKeyDuplicate.permissions;
+              maskedKeyDuplicate.rateLimit = rateLimit || maskedKeyDuplicate.rateLimit;
+              maskedKeyDuplicate.updatedAt = new Date();
+              maskedKeyDuplicate.lastUsed = new Date();
+              
+              const reactivatedKey = await maskedKeyDuplicate.save();
+              
+              return {
+                success: true,
+                message: 'Previously revoked API key has been reactivated',
+                data: {
+                  _id: reactivatedKey._id,
+                  keyPrefix: reactivatedKey.keyPrefix,
+                  name: reactivatedKey.name,
+                  isExternal: reactivatedKey.isExternal,
+                  externalProvider: reactivatedKey.externalProvider,
+                  provider: reactivatedKey.provider,
+                  permissions: reactivatedKey.permissions,
+                  rateLimit: reactivatedKey.rateLimit,
+                  status: reactivatedKey.status,
+                  createdAt: reactivatedKey.createdAt,
+                  updatedAt: reactivatedKey.updatedAt
+                }
+              };
+            } else {
+              // Key is already active
+              throw new ApiError(400, "This API key is already active in your account. Please check your existing API keys.");
+            }
           } else {
+            // Different user trying to use the same key
             throw new ApiError(400, "This external API key is already registered by another user");
           }
         }
+
+        // Encrypt the external key
+        const encryptionResult = ApiKey.encryptExternalKey(externalKey);
 
         apiKeyData = {
           ...apiKeyData,
           isExternal: true,
           externalProvider: provider,
+          provider: provider, // Also set provider field for chat router compatibility
           externalKeyEncrypted: encryptionResult.encrypted,
           encryptionIV: encryptionResult.iv,
           encryptionTag: encryptionResult.tag,
           keyPrefix: `${provider.substring(0, 4)}-****${externalKey.slice(-4)}`,
           hashedKey: crypto.createHash('sha256').update(encryptionResult.encrypted).digest('hex'),
-          key: ApiKeyService._maskExternalKey(externalKey, provider)
+          key: maskedKey // Use the pre-generated masked key
         };
         
         console.log('🔍 DEBUG: External key data prepared:', {
           provider,
+          externalProvider: provider,
           originalKey: externalKey.substring(0, 10) + '...',
           maskedKey: apiKeyData.key,
           keyPrefix: apiKeyData.keyPrefix

@@ -34,7 +34,7 @@ router.post('/completions', verifyJWTOrApiKey('chat.access', 'chat.completions')
         if (provider === 'auto' || !provider) {
             if (model?.includes('gemini') || model?.includes('google')) {
                 selectedProvider = 'google';
-                selectedModel = model || 'gemini-1.5-pro-latest';
+                selectedModel = model || 'gemini-2.5-flash';
             } else if (model?.includes('gpt') || model?.includes('openai')) {
                 selectedProvider = 'openai';
                 selectedModel = model || 'gpt-4';
@@ -164,7 +164,7 @@ async function tryExternalApiFallback(req, messages, temperature, max_tokens) {
         if (googleKey) {
             console.log('🔄 Fallback to Google Gemini API');
             const actualProvider = googleKey.provider || googleKey.externalProvider;
-            const result = await handleExternalApiRequest(actualProvider, 'gemini-1.5-pro-latest', messages, temperature, max_tokens, req, googleKey);
+            const result = await handleExternalApiRequest(actualProvider, 'gemini-2.5-flash', messages, temperature, max_tokens, req, googleKey);
             if (result) return result;
         }
 
@@ -291,12 +291,17 @@ async function handleGoogleAPI(apiKey, model, messages, temperature, max_tokens)
             }
         };
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+        
+        console.log(`📡 Google API URL: ${url}`);
+        console.log(`📝 Request model: ${model}`);
+        console.log(`🔑 Using API key: ${apiKey.substring(0, 10)}...`);
         
         const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'x-goog-api-key': apiKey
             },
             body: JSON.stringify(requestBody)
         });
@@ -626,17 +631,17 @@ router.get('/models', verifyJWTOrApiKey('chat.access'), async (req, res) => {
                         apiKeyCount: googleKeys.length,
                         models: [
                             {
-                                id: 'gemini-1.5-flash',
-                                name: 'Gemini 1.5 Flash',
-                                description: 'Fast and efficient multimodal model for scaling across diverse tasks',
+                                id: 'gemini-2.5-flash',
+                                name: 'Gemini 2.5 Flash',
+                                description: 'Stable version of Gemini 2.5 Flash, our mid-size multimodal model (June 2025)',
                                 type: 'api',
                                 provider: 'google',
                                 requiresApiKey: true
                             },
                             {
-                                id: 'gemini-1.5-pro',
-                                name: 'Gemini 1.5 Pro',
-                                description: 'Mid-size multimodal model that supports up to 2 million tokens',
+                                id: 'gemini-2.5-pro',
+                                name: 'Gemini 2.5 Pro',
+                                description: 'Stable release of Gemini 2.5 Pro (June 2025)',
                                 type: 'api',
                                 provider: 'google',
                                 requiresApiKey: true
@@ -644,7 +649,15 @@ router.get('/models', verifyJWTOrApiKey('chat.access'), async (req, res) => {
                             {
                                 id: 'gemini-2.0-flash',
                                 name: 'Gemini 2.0 Flash',
-                                description: 'Latest fast and versatile multimodal model',
+                                description: 'Fast and versatile multimodal model for scaling across diverse tasks',
+                                type: 'api',
+                                provider: 'google',
+                                requiresApiKey: true
+                            },
+                            {
+                                id: 'gemini-2.0-flash-exp',
+                                name: 'Gemini 2.0 Flash (Experimental)',
+                                description: 'Experimental version of Gemini 2.0 Flash with latest features',
                                 type: 'api',
                                 provider: 'google',
                                 requiresApiKey: true

@@ -134,6 +134,7 @@ import chatRouter from './routes/chat.router.js';
 import testRouter from './routes/test.router.js';
 import adminRouter from './routes/admin.router.js';
 import apiKeyRouter from './routes/apikey.router.js';
+import newsletterRouter from './routes/newsletter.router.js';
 // import mcpRoutes from './routes/mcpRoutes.js'; // Commented out - using standalone MCP server
 
 // Log successful imports
@@ -539,6 +540,10 @@ LoggingService.info('🔗 Admin router mounted at /api/v1/admin');
 // Mount API key router (has its own internal rate limiting)
 app.use("/api/v1/api-keys", apiKeyRouter);
 LoggingService.info('🔗 API key router mounted at /api/v1/api-keys');
+
+// Newsletter subscription route
+app.use('/api/v1/newsletter', newsletterRouter);
+LoggingService.info('🔗 Newsletter router mounted at /api/v1/newsletter');
 
 // Mount MCP router for Model Context Protocol operations
 // app.use("/api/v1/mcp", mcpRoutes); // Commented out - using standalone MCP server

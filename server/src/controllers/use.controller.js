@@ -11,6 +11,7 @@ import { User } from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from "../email/emails.js";
 import crypto from "crypto";
+import redisService from "../services/redis.service.js";
 
 // Define the registerUser controller function
 // This function handles complete user registration without file uploads
@@ -96,6 +97,9 @@ const registerUser = asyncHandler(async (req, res) => {
     const verificationCode = user.generateVerificationToken();
     await user.save({ validateBeforeSave: false });
     
+    // Store verification code in Redis (15 min expiry) - Optional enhancement
+    await redisService.setVerificationCode(email, verificationCode, 900);
+    
     try {
         // Send verification email
         await sendVerificationEmail(email, verificationCode);
@@ -162,6 +166,13 @@ const login = asyncHandler(async (req, res) => {
     // Extract credentials from request body
     const { email, username, password, rememberMe } = req.body;
 
+    // Rate limiting check (optional - 10 login attempts per minute per IP)
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const rateLimit = await redisService.incrementRateLimit(`login:${ipAddress}`, 60);
+    if (rateLimit.count > 10) {
+        throw new ApiError(429, "Too many login attempts. Please try again in a minute.");
+    }
+
     // Ensure either email or username is provided
     if (!(email || username)) {
         throw new ApiError(400, "Please provide either email or username to login.");
@@ -207,6 +218,14 @@ const login = asyncHandler(async (req, res) => {
     // Fetch user data without sensitive fields
     const loggedInUser = await User.findById(user._id)
         .select("-password -refreshToken");
+
+    // Cache user session in Redis (optional - 1 hour)
+    await redisService.setSession(user._id.toString(), {
+        userId: user._id,
+        email: user.email,
+        username: user.username,
+        lastLogin: new Date().toISOString()
+    }, 3600);
 
     // Cookie options for security
     const options = {
@@ -519,6 +538,9 @@ const resendVerificationEmail = asyncHandler(async (req, res) => {
     user.verificationTokenExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
     
     await user.save({ validateBeforeSave: false });
+
+    // Store in Redis for faster lookup (15 min expiry) - Optional enhancement
+    await redisService.setVerificationCode(email, verificationCode, 900);
 
     // STEP 7: Send appropriate email based on purpose
     try {

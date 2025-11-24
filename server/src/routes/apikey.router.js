@@ -9,6 +9,16 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = Router();
 
+// Apply JWT authentication to all routes except validation
+router.use((req, res, next) => {
+  // Skip auth for validation endpoint
+  if (req.path === '/validate-external-key' && req.method === 'POST') {
+    return next();
+  }
+  // All other routes require authentication
+  return verifyJWT(req, res, next);
+});
+
 // Validate external API key format (no auth needed for validation)
 router.post("/validate-external-key", asyncHandler(async (req, res) => {
   const { apiKey, provider } = req.body;
@@ -107,6 +117,11 @@ router.get("/:keyId", asyncHandler(async (req, res) => {
 
 // Create a new API key
 router.post("/", asyncHandler(async (req, res) => {
+  // Ensure user is authenticated
+  if (!req.user || !req.user._id) {
+    throw new ApiError(401, "Authentication required to create API key");
+  }
+
   const { 
     name, 
     description, 
@@ -119,6 +134,9 @@ router.post("/", asyncHandler(async (req, res) => {
     provider,
     settings
   } = req.body;
+  
+  console.log('🔑 Creating API key for user:', req.user._id);
+  console.log('📝 Key data:', { name, provider, hasExternalKey: !!externalKey });
   
   // Auto-generate name if not provided
   let keyName = name;

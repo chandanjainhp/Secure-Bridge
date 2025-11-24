@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { app } from "./app.js";
 import connectDB from "./db/index.js";
 import LoggingService from './services/loggingService.js';
+import redisService from './services/redis.service.js';
 
 // Configure environment variables
 dotenv.config({
@@ -38,6 +39,9 @@ async function gracefulShutdown(signal) {
     LoggingService.info(`${signal} received. Starting graceful shutdown...`);
     
     try {
+        // Disconnect from Redis
+        await redisService.disconnect();
+        
         // Stop MCP server if running
         if (mcpServer && typeof mcpServer.close === 'function') {
             await mcpServer.close();
@@ -65,6 +69,9 @@ async function startServer() {
         // Connect to database first
         await connectDB();
         LoggingService.info('✅ Database connected successfully');
+        
+        // Connect to Redis (optional - won't fail if unavailable)
+        await redisService.connect();
         
         // Start MCP server if enabled
         await startMCPServer();

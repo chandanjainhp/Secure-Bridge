@@ -1,6 +1,27 @@
 import mongoose, { Schema } from "mongoose";
 import crypto from "crypto";
 
+// Subdocument schemas with suppressReservedKeysWarning
+const endpointUsageSchema = new Schema({
+  path: String,
+  method: String,
+  count: { type: Number, default: 0 }
+}, { suppressReservedKeysWarning: true, _id: false });
+
+const dailyUsageSchema = new Schema({
+  date: { type: Date, required: true },
+  requests: { type: Number, default: 0, min: 0 },
+  endpoints: [endpointUsageSchema],
+  errors: { type: Number, default: 0, min: 0 },
+  averageResponseTime: { type: Number, default: 0, min: 0 }
+}, { suppressReservedKeysWarning: true, _id: false });
+
+const monthlyUsageSchema = new Schema({
+  month: { type: String, required: true }, // Format: YYYY-MM
+  requests: { type: Number, default: 0, min: 0 },
+  errors: { type: Number, default: 0, min: 0 }
+}, { suppressReservedKeysWarning: true, _id: false });
+
 // Enhanced API Key Schema with comprehensive security and management features
 const apiKeySchema = new Schema(
   {
@@ -32,8 +53,8 @@ const apiKeySchema = new Schema(
     },
     keyPrefix: {
       type: String,
-      required: true,
-      index: true
+      required: true
+      // index: true - Removed duplicate, using schema.index() instead
     },
     hashedKey: {
       type: String,
@@ -140,48 +161,8 @@ const apiKeySchema = new Schema(
       firstUsed: {
         type: Date
       },
-      dailyUsage: [{
-        date: {
-          type: Date,
-          required: true
-        },
-        requests: {
-          type: Number,
-          default: 0,
-          min: 0
-        },
-        endpoints: [{
-          path: String,
-          method: String,
-          count: { type: Number, default: 0 }
-        }],
-        errors: {
-          type: Number,
-          default: 0,
-          min: 0
-        },
-        averageResponseTime: {
-          type: Number,
-          default: 0,
-          min: 0
-        }
-      }],
-      monthlyUsage: [{
-        month: {
-          type: String, // Format: YYYY-MM
-          required: true
-        },
-        requests: {
-          type: Number,
-          default: 0,
-          min: 0
-        },
-        errors: {
-          type: Number,
-          default: 0,
-          min: 0
-        }
-      }]
+      dailyUsage: [dailyUsageSchema],
+      monthlyUsage: [monthlyUsageSchema]
     },
     // Enhanced Expiration Management
     expiresAt: {
@@ -276,11 +257,11 @@ const apiKeySchema = new Schema(
   },
   {
     timestamps: true,
+    suppressReservedKeysWarning: true, // Suppress warning for 'errors' field
     // Add text index for search functionality
-    index: {
-      name: 'text',
-      description: 'text'
-    }
+    indexes: [
+      { name: 'text', description: 'text' }
+    ]
   }
 );
 
