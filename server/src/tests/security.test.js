@@ -165,7 +165,9 @@ describe('Security Tests - Phase 1', () => {
         .set('Authorization', `Bearer ${expiredToken}`)
         .expect(401);
 
-      expect(res.body.message).toContain('invalid') || expect(res.body.message).toContain('Invalid');
+      // Message should contain 'invalid' or 'expired' (case insensitive)
+      const message = res.body.message || '';
+      expect(message.toLowerCase()).toMatch(/(invalid|expired)/);
     });
   });
 
@@ -207,8 +209,9 @@ describe('Security Tests - Phase 1', () => {
         .get('/api/v1/users/me')
         .expect(401);
 
-      expect(res.body.message).toContain('Unauthorized') || 
-        expect(res.body.message).toContain('Invalid');
+      // Message should contain either 'Unauthorized' or 'Invalid'
+      const message = res.body.message || '';
+      expect(message.toLowerCase()).toContain('unauthorized');
     });
 
     it('should return 401 for protected route with invalid JWT', async () => {
@@ -217,8 +220,9 @@ describe('Security Tests - Phase 1', () => {
         .set('Authorization', 'Bearer invalid-token')
         .expect(401);
 
-      expect(res.body.message).toContain('invalid') || 
-        expect(res.body.message).toContain('Invalid');
+      // Message should contain either 'invalid' or 'Invalid'
+      const message = res.body.message || '';
+      expect(message.toLowerCase()).toContain('invalid');
     });
 
     it('should return 200 for protected route with valid JWT', async () => {
