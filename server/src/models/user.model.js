@@ -15,7 +15,7 @@ import jwt from "jsonwebtoken"
 
 // Import bcrypt library for password hashing
 // Provides secure password encryption and comparison
-import bcrypt from "bcrypt"
+import bcrypt from "bcryptjs";
 
 
 // USER SCHEMA DEFINITION
@@ -126,9 +126,9 @@ userSchema.pre("save", async function (next) {
     // If password hasn't changed, skip hashing and proceed to next middleware
     if(!this.isModified("password")) return next();
 
-    // Hash the password using bcrypt with salt rounds of 10
+    // Hash the password using bcrypt with salt rounds of 12
     // Higher salt rounds = more secure but slower processing
-    this.password = await bcrypt.hash(this.password, 10); // Fixed: added 'await'
+    this.password = await bcrypt.hash(this.password, 12);
     
     // Call next() to proceed to the next middleware or save operation
     next();
@@ -151,24 +151,18 @@ userSchema.methods.isPasswordCorrect = async function(password) {
 // ===============================
 // Creates a JWT access token containing user information
 userSchema.methods.generateAccessToken = function(extendedSession = false) {
-    // Choose expiration time based on whether it's an extended session
-    const expiryTime = extendedSession ? '30d' : (process.env.ACCESS_TOKEN_EXPIRY || '15m');
-    
-    // Sign and return a JWT token with user payload
+    const expiryTime = extendedSession ? '30d' : (process.env.JWT_EXPIRES_IN || process.env.ACCESS_TOKEN_EXPIRY || '15m');
     return jwt.sign(
         {
-            // Payload: Information to include in the token
-            _id: this._id,               // User's unique ID
-            email: this.email,           // User's email
-            username: this.username,     // User's username
-            fullName: this.fullName,     // User's full name
-            isAdmin: this.isAdmin,       // Admin status
-            adminLevel: this.adminLevel  // Admin level if applicable
+            _id: this._id,
+            email: this.email,
+            username: this.username,
+            fullName: this.fullName,
+            isAdmin: this.isAdmin,
+            adminLevel: this.adminLevel
         },
-        // Secret key for signing the token (should come from environment variables)
-        process.env.ACCESS_TOKEN_SECRET,
+        process.env.JWT_SECRET || process.env.ACCESS_TOKEN_SECRET,
         {
-            // Token expiration time
             expiresIn: expiryTime
         }
     );
@@ -178,19 +172,13 @@ userSchema.methods.generateAccessToken = function(extendedSession = false) {
 // ================================
 // Creates a JWT refresh token for maintaining user sessions
 userSchema.methods.generateRefreshToken = function(extendedSession = false) {
-    // Choose expiration time based on whether it's an extended session
-    const expiryTime = extendedSession ? '90d' : (process.env.REFRESH_TOKEN_EXPIRY || '7d');
-    
-    // Sign and return a refresh token with minimal payload
+    const expiryTime = extendedSession ? '90d' : (process.env.JWT_REFRESH_EXPIRES_IN || process.env.REFRESH_TOKEN_EXPIRY || '7d');
     return jwt.sign(
         {
-            // Minimal payload for refresh token (just user ID)
             _id: this._id,
         },
-        // Secret key for signing refresh token (should be different from access token secret)
-        process.env.REFRESH_TOKEN_SECRET,
+        process.env.JWT_REFRESH_SECRET || process.env.REFRESH_TOKEN_SECRET,
         {
-            // Longer expiration time for refresh tokens
             expiresIn: expiryTime
         }
     );

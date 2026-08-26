@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "security-and-hardening": {
+      "source": "addyosmani/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/security-and-hardening/SKILL.md",
+      "computedHash": "47d027526d7e0be784a19a034f18cba328009b3c8fe483f16e4b12530cf82183"
+    }
+  }
+}

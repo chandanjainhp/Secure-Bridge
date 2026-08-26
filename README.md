@@ -1,182 +1,261 @@
 # Secure Bridge
 
-Secure Bridge is a hybrid web application that provides an encrypted messaging/chat frontend and a backend that manages API keys, runs Model Context Protocol (MCP) helpers, and integrates homomorphic encryption (OpenFHE) via WebAssembly for secure processing. The project includes a React + TypeScript client, a Node.js/Express backend, FHE/WebAssembly artifacts, and tooling to run MCP services.
+Secure Bridge is a hybrid web application that provides an encrypted messaging and chat environment. The backend manages third-party LLM API keys via a secure **Bring Your Own Key (BYOK)** model, tracks API usage, supports Model Context Protocol (MCP) integrations, and leverages Fully Homomorphic Encryption (FHE) with OpenFHE compiled to WebAssembly for confidential data processing.
 
-This README explains architecture, how to run the project locally (PowerShell-friendly), environment configuration, troubleshooting tips, and developer notes.
+The project consists of:
+1. **React + Vite Frontend (`client/`)** using Tailwind CSS, shadcn/ui, and React Query.
+2. **Node.js + Express Backend (`server/`)** using MongoDB for primary storage, Redis for OTP caching/rate limiting, and JSON Web Token (JWT) credentials.
+3. **C++ OpenFHE & Emscripten Build Setup (`server/emsdk/`, `server/fhe/`)** for compiling homomorphic encryption logic to WASM/JS wrappers.
 
 ---
 
 ## Table of Contents
-- Project overview
-- Architecture & folders
-- Prerequisites
-- Quick start (dev)
-  - Start backend
-  - Start frontend
-  - Start full system (Windows batch)
-- Building for production
-- Environment variables
-- FHE / OpenFHE / WASM notes
-- MCP (Model Context Protocol) notes
-- Tests, linting and basic checks
-- Troubleshooting
-- Contributing
-- License
+
+- [Project Architecture & Directory Structure](#project-architecture--directory-structure)
+- [Key Features](#key-features)
+- [Prerequisites](#prerequisites)
+- [Environment Configuration](#environment-configuration)
+- [Database & Services Setup (Docker)](#database--services-setup-docker)
+- [Running the Project Locally](#running-the-project-locally)
+  - [Start Backend](#start-backend)
+  - [Start Frontend](#start-frontend)
+- [Homomorphic Encryption (FHE) WebAssembly Build](#homomorphic-encryption-fhe-webassembly-build)
+- [Model Context Protocol (MCP) Features](#model-context-protocol-mcp-features)
+- [Testing & Code Quality](#testing--code-quality)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Project overview
-Secure Bridge is designed to enable secure AI-assisted chat and MCP-based tools while protecting user data with layered encryption techniques, including an experimental integration with homomorphic encryption (OpenFHE) compiled to WebAssembly. The app has two primary surfaces:
+## Project Architecture & Directory Structure
 
-- `client/` — React + TypeScript frontend (Vite) using Tailwind CSS and shadcn/ui-inspired components. Mobile-first responsive layouts and interactive chat UI live here.
-- `server/` — Node.js backend with Express that exposes REST and MCP endpoints, manages API keys, implements authentication, and loads FHE WebAssembly assets where needed.
+Secure Bridge uses a hybrid structure that combines a traditional layered architecture with domain-specific feature folders (`client/src/features` and `server/src/features`) to isolate core BYOK and usage features:
 
-The repository also contains OpenFHE sources, Emscripten toolchain support (`emsdk/`), and built WASM artifacts in `fhe/` and `fhe-wasm/` used by the backend and client to perform encrypted operations.
+```
+Secure-Bridge/
+├── client/                     # Frontend Application (React + Vite)
+│   ├── public/                 # Static public assets
+│   ├── src/                    # Source Code
+│   │   ├── app/                # Global config (store, router, ErrorBoundary)
+│   │   ├── features/           # Modular features
+│   │   │   ├── api-key/        # BYOK management components
+│   │   │   ├── auth/           # Login, registration, & OTP auth state/components
+│   │   │   ├── chat/           # Conversational messaging interface
+│   │   │   ├── layout/         # Persistent sidebars & panels
+│   │   │   ├── profile/        # User profile configuration
+│   │   │   ├── projects/       # Workspaces/Projects CRUD
+│   │   │   └── usage/          # API usage visual graphs & limits
+│   │   ├── pages/              # Page views matching routing paths
+│   │   ├── shared/             # Global components, hooks, & API client
+│   │   └── test/               # UI components test suites
+│   ├── vite.config.js          # Vite build config
+│   ├── tailwind.config.js      # Tailwind CSS configuration
+│   └── package.json            # Frontend package details
+├── server/                     # Backend API Server (Express.js)
+│   ├── src/                    # Backend Source Code
+│   │   ├── config/             # Connection configurations (Redis, etc.)
+│   │   ├── controllers/        # General controller classes
+│   │   ├── db/                 # Database initialization and connection (Mongoose)
+│   │   ├── email/              # Email templates & transport setups
+│   │   ├── features/           # Feature-based backend logic (api-key, chat, usage)
+│   │   ├── middlewares/        # Security headers, auth verification, validation
+│   │   ├── models/             # Mongoose database models (User, Project, apikey)
+│   │   ├── routes/             # App Router registers (Users, Auth, Project, apiKey)
+│   │   ├── services/           # Encryption services, FHE Stub, & external APIs
+│   │   ├── tests/              # Jest integration/unit test suite
+│   │   ├── utils/              # Response/Error helpers (ApiError, asyncHandler)
+│   │   └── validation/         # Request input validation rules
+│   ├── emsdk/                  # Emscripten toolchain for WebAssembly compiling
+│   ├── fhe/                    # Precompiled FHE compiled binaries & scripts
+│   ├── fhe-wasm/               # Precompiled FHE WASM artifacts
+│   ├── openfhe-development/    # C++ OpenFHE source folder
+│   └── package.json            # Backend package details
+├── scripts/                    # Script helpers for dev setup
+│   ├── db-up.sh                # Script to start MongoDB container
+│   └── db-down.sh              # Script to tear down databases
+├── docker-compose.yml          # Container configuration for MongoDB & Redis
+└── README.md                   # Main Project Documentation
+```
 
 ---
 
-## Architecture & folders (high-level)
-- `client/` — React + TypeScript frontend. Run with Vite.
-- `server/` — Node.js backend (Express, Mongoose, JWT auth). Server scripts and MCP implementation live here.
-- `fhe/`, `fhe-wasm/`, `openfhe-development/` — OpenFHE C/C++ source and pre-built wasm/.js wrappers used by the system. The server loads `openfhe_pke_es6.wasm` and `openfhe_pke_es6.js` by default.
-- `emsdk/` — Emscripten SDK for building WebAssembly from OpenFHE sources (if you need to rebuild WASM locally).
-- `start_complete_system.bat` — Windows batch script to attempt launching the full stack (server + client + any helper services).
-- `server/.env.example` — Example environment variables for backend. Copy it to `.env` and customize.
+## Key Features
+
+1. **Authentication**: JWT-based session security with optional One-Time Password (OTP) verification sent via Gmail SMTP.
+2. **Project-based Workspaces**: Organization-level workspaces allowing different system prompts, settings, and conversation history.
+3. **BYOK API-Key Caching**: Secure caching of third-party keys (OpenAI, Anthropic, Gemini, Azure) encrypted at rest using AES-256-GCM. Plaintext keys are never revealed in responses or logs.
+4. **Token & Message Usage Tracking**: Free tiers with strict limits enforced by middleware, caching usage records in MongoDB/Redis.
+5. **Experimental OpenFHE Support**: Fully Homomorphic Encryption (FHE) support utilizing C++ wrappers compiled to WebAssembly (fallback to a javascript `FHEStub.js` in mock environment).
+6. **Model Context Protocol (MCP)**: Server integrations allowing AI models to leverage context tools (e.g. executing external calls and system diagnostics).
 
 ---
 
 ## Prerequisites
-- Node.js 18.x or later (recommended)
-- npm (8+) or yarn
-- (Optional) Python 3.8+ and Emscripten (`emsdk`) if you plan to rebuild OpenFHE WASM from source
-- MongoDB instance (URI) if you want full DB-backed features; the server can run in mock mode for local dev; see `server/.env.example`
 
-Note: There are platform-specific files and helper scripts for building OpenFHE with Emscripten — consult the `openfhe-development/` folder and `emsdk/` if you plan to rebuild the WASM bundles.
+- **Node.js**: `20.x` or later recommended
+- **Bun**: `1.3.x` or later (used primarily for client dependencies and Vite tooling)
+- **Docker & Docker Compose**: Needed to run database services locally
 
 ---
 
-## Quick start (development)
-The instructions below assume you're using PowerShell (Windows). Adjust to your shell (bash/zsh) if needed.
+## Environment Configuration
 
-1. Clone the repository and open a terminal at the repo root.
+Configure environmental secrets before executing the services.
 
-2. Backend
+### Backend Configurations (`server/.env`)
+Create a `.env` file under `server/` (see `server/.env.docker` or `server/.env.example` as a template):
+```env
+PORT=8000
+NODE_ENV=development
+MONGODB_URI=mongodb://admin:admin123@localhost:27017?authSource=admin
+CORS_ORIGIN=http://localhost:5173
 
-```powershell
-cd server
-npm install
-# copy the example env (PowerShell)
-Copy-Item .env.example .env
-# Edit .env and fill required values (MONGO_URI, JWT_SECRET, API keys, etc.)
-# Start in dev mode (nodemon)
-npm run dev
+# JWT Credentials
+JWT_SECRET=your_32_character_jwt_secret_here
+JWT_EXPIRES_IN=1d
+JWT_REFRESH_SECRET=your_32_character_jwt_refresh_secret_here
+JWT_REFRESH_EXPIRES_IN=10d
+
+# Cryptography
+ENCRYPTION_KEY=your_base64_encoded_aes_key_here
+API_KEY_ENCRYPTION_SECRET=your_api_key_encryption_secret_here
+
+# Redis
+REDIS_URL=redis://localhost:6380
+
+# Nodemailer SMTP Configuration (Gmail)
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-specific-smtp-password
 ```
 
-3. Frontend
-
-```powershell
-cd ..\client
-npm install
-# Run the Vite dev server
-npm run dev
+### Frontend Configurations (`client/.env`)
+Create a `.env` file under `client/`:
+```env
+VITE_API_URL=http://localhost:8000/api/v1
 ```
 
-4. Full system (Windows)
-If present and configured, you can try the provided batch script from repo root:
+---
 
-```powershell
-# From repository root
-.\start_complete_system.bat
-```
+## Database & Services Setup (Docker)
 
-This tries to start both the server and client and any other helper processes; review the script to understand what it performs and ensure your `.env` values are set.
+We run database components inside isolated Docker containers.
+
+1. **Start Services**:
+   Start MongoDB and Redis in the background:
+   ```bash
+   docker compose up -d mongodb redis
+   ```
+   *Note: Redis is mapped to host port `6380` (container port `6379`) to avoid conflicts with native instances.*
+
+2. **Verify Database Status**:
+   You can verify MongoDB status using the convenience shell script:
+   ```bash
+   ./scripts/db-up.sh
+   ```
+
+3. **Optional Database Dashboard (Mongo Express)**:
+   Launch the Mongo-Express visual interface:
+   ```bash
+   docker compose --profile tools up -d mongo-express
+   ```
+   Open http://localhost:8081 inside your browser to view the database collections.
+
+4. **Shutdown Services**:
+   ```bash
+   ./scripts/db-down.sh
+   ```
 
 ---
 
-## Building for production
-- Client (Vite):
+## Running the Project Locally
 
-```powershell
-cd client
-npm run build
-# Preview the built client (optional)
-npm run preview
-```
+With database services running, boot up the local Node server and Vite client.
 
-- Server: Server uses Node directly. There is no transpile build step by default — configure as needed for TypeScript or bundling. You can run production server with environment variables set and `npm start` from `server/`.
+### Start Backend
 
----
+1. Navigate to the server folder and install dependencies:
+   ```bash
+   cd server
+   npm install
+   ```
 
-## Important environment variables
-The server includes a `.env.example` with the full list. Key vars you'll commonly set:
-- `PORT` — server port (default `8000`) 
-- `MONGO_URI` — connection string to MongoDB
-- `JWT_SECRET` — authentication signing secret (minimum 32 characters in production)
-- `ENCRYPTION_KEY` — symmetric key for at-rest API-key encryption (minimum length)
-- LLM/API keys: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `AZURE_OPENAI_API_KEY`, etc.
-- `ENABLE_MCP` — `true` / `false` to enable MCP features
-- OpenFHE paths (if used): `FHE_WASM_PATH`, `FHE_JS_PATH` — by default point to `../fhe/openfhe_pke_es6.wasm` and `../fhe/openfhe_pke_es6.js` in `server/.env.example`
+2. Seed default DB collections (Optional):
+   ```bash
+   npm run db:seed
+   ```
 
-Always keep secrets out of source control. Use a secrets manager for production deployments.
+3. Boot the Express API Server in development mode:
+   ```bash
+   npm run dev
+   ```
+   The backend server will run on http://localhost:8000.
 
----
+### Start Frontend
 
-## FHE / OpenFHE / WASM notes
-- Pre-built WASM and JS wrappers are available in the repository under `fhe/` and `fhe-wasm/`.
-- If you need to rebuild OpenFHE to WebAssembly, use the `emsdk/` toolchain. Rebuilding OpenFHE from source is advanced and platform-specific — see `openfhe-development/` and the `emsdk` README.
-- The server will load the FHE JS/WASM assets if `FHE_WASM_PATH` and `FHE_JS_PATH` point to valid files. In development you may set those paths relative to the `server/` directory.
+1. Navigate to the client folder and install dependencies:
+   ```bash
+   cd ../client
+   npm install
+   ```
 
----
-
-## MCP (Model Context Protocol) notes
-- MCP-related logic lives under `server/src/mcp` and related MCP helper files. See `server/MCP_IMPLEMENTATION_SUMMARY.md` for a design summary.
-- Enable MCP with `ENABLE_MCP=true` in the server `.env`. Some MCP features rely on external data sources and may require additional API keys (e.g., weather, Gemini/Google keys).
-- A small test harness `server/test-mcp-endpoint.js` exists to validate the MCP server.
+2. Boot the Vite development server:
+   ```bash
+   npm run dev
+   ```
+   Open the client interface in your browser at http://localhost:5173.
 
 ---
 
-## Tests, linting and checks
-- Server tests: `cd server && npm test`
-- Client lint: `cd client && npm run lint` (client has `eslint` configured)
-- Run TypeScript checks where applicable: install `typescript` in the folder and run `tsc --noEmit` (if TypeScript sources present)
+## Homomorphic Encryption (FHE) WebAssembly Build
+
+If you need to re-compile the C++ OpenFHE source into browser-ready WebAssembly and Javascript wrappers:
+
+1. Setup the Emscripten Compiler Environment inside `server/emsdk/`.
+2. Navigate to `server/openfhe-development/` and trigger the compiling recipe (requires `cmake` and toolchain setup).
+3. The build output will output Javascript glue-code and WASM files (e.g. `openfhe_pke_es6.js` and `openfhe_pke_es6.wasm`) into `server/fhe/` and `server/fhe-wasm/`.
+4. Update the server env var paths (`FHE_WASM_PATH`, `FHE_JS_PATH`) to point to these newly compiled WASM configurations.
+
+*Note: In mock environment modes (`ENCRYPTION_MODE=mock`), the backend routes fallback gracefully to `server/src/services/FHEStub.js` without failing application startup.*
 
 ---
 
-## Troubleshooting (common issues)
-- MongoDB connection errors: ensure `MONGO_URI` is valid and network access (Atlas IP whitelist) allows your host. If you see `option buffermaxentries is not supported` in logs, try removing deprecated options from the connection string or update driver versions.
-- Missing FHE WASM: The server expects `FHE_WASM_PATH` to point to a `.wasm` file. If you see file-not-found errors, set the env var to the correct path or copy the prebuilt files from `fhe/`.
-- MCP not starting: Check `ENABLE_MCP` and the `server` logs. Some MCP components are optional and the server may continue without MCP if a module fails to initialize.
-- Dev server port collisions: change `PORT` in `server/.env` or the Vite port in `client/vite.config.*`.
-- Secrets in `.env`: Do not commit your `.env`. Use `.env.example` as a template.
+## Model Context Protocol (MCP) Features
+
+To run external context operations using MCP:
+
+1. Set `ENABLE_MCP=true` in `server/.env`.
+2. Configure outbound permissions inside `OUTBOUND_ALLOWLIST` (e.g. allow weather API endpoints or localhost).
+3. The model will communicate query objectives to the internal MCP helper services residing in `server/src/features/chat/services/chatService.js`.
 
 ---
 
-## Developer notes & tips
-- Frontend is mobile-first using Tailwind CSS; many components use utility classes tuned for small breakpoints. If you modify layout components, check both narrow (320–420px) and wide screens.
-- The repository includes a number of experimental and research folders (`openfhe-development`). Only rebuild these if you need to modify FHE internals — rebuilding typically requires Emscripten and significant build time.
-- Logging and health checks: The server writes logs to `server/logs/`; use these to debug startup and MCP issues.
+## Testing & Code Quality
+
+Run tests and style linters to verify your modifications before pushing commits.
+
+- **Backend Jest Tests**:
+  Runs database validation and API mock endpoints testing:
+  ```bash
+  cd server
+  npm test
+  ```
+  Or get coverage stats:
+  ```bash
+  npm run test:coverage
+  ```
+
+- **Frontend Linting**:
+  ```bash
+  cd client
+  npm run lint
+  ```
 
 ---
 
-## Contributing
-Contributions are welcome. Follow these steps:
-1. Create an issue describing your change/bug
-2. Create a feature branch off `main` or `dev` (project convention)
-3. Run tests and linting locally
-4. Open a PR with a clear description and testing steps
+## Troubleshooting
 
-Please keep security in mind when changing how API keys or secrets are handled.
-
----
-
-## License
-This project is provided under the MIT License. See `LICENSE` for details.
-
----
-
-If you'd like, I can also:
-- Add a `client/README.md` and `server/README.md` with folder-specific commands
-- Create `.env.example` copies or helper PowerShell scripts for local setup
-- Run the client build and server start in this environment to validate (I will need permission to run terminal commands)
-
-If you want any of those, tell me which and I'll add them next.
+- **Redis Offline Warning**:
+  If Redis fails to load or connect, the backend logs `Failed to connect to Redis` and logs a warning. **OTP flows will fallback automatically to local memory storage** (temporary codes will clear if the server restarts).
+- **CORS Failures**:
+  Ensure the `CORS_ORIGIN` variable inside `server/.env` exactly matches the local client URL (e.g. `http://localhost:5173`).
+- **Database Connection Failures**:
+  Verify the MongoDB URI in `server/.env`. For local docker setups, keep `MONGODB_URI=mongodb://admin:admin123@localhost:27017?authSource=admin`.

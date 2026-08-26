@@ -16,7 +16,8 @@ import { app } from "./app.js";
 // Import our custom database connection function from the db folder
 // This function handles MongoDB connection with proper error handling
 import connectDB from "./db/index.js";
-
+// Import Redis connection function
+import { connectRedis } from "./config/redis.js";
 
 // Configure dotenv to load environment variables from a specific file
 // This reads variables like MONGODB_URI, PORT, etc. from the .env file
@@ -27,9 +28,11 @@ dotenv.config({
 // Call the database connection function and handle the Promise it returns
 // This establishes connection to MongoDB before starting the application
 connectDB()
-// .then() executes when the database connection is successful
-// The arrow function inside .then() will only run after MongoDB is connected
-.then(() => {
+  .then(() => {
+    // Connect to Redis
+    return connectRedis();
+  })
+  .then(() => {
     // Add error handling for the Express app
     app.on('error', (error) => {
         console.log("Express app error: ", error);
@@ -44,12 +47,12 @@ connectDB()
         // Uses environment variable PORT if available, otherwise defaults to 8000
         console.log(`🚀 Server is running at port: ${process.env.PORT || 8000}`);
     })
-}) 
-// .catch() executes if the database connection fails
-// This prevents the server from starting if there's no database connection
-.catch((err) => {
+  }) 
+  // .catch() executes if the database connection fails
+  // This prevents the server from starting if there's no database connection
+  .catch((err) => {
     // Log the error message with details about the MongoDB connection failure
     console.log("MONGO DB connection failed !!! ", err);
     // Exit the process since we can't run without database
     process.exit(1);
-})
+  });

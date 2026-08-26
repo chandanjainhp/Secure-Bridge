@@ -1,146 +1,119 @@
-// Redis service for storing temporary metadata (optional enhancement)
-// This service gracefully degrades if Redis is not available
-import { Redis } from '@upstash/redis';
+import { redisClient, safeRedisOperation } from "../config/redis.js";
+import fs from 'fs/promises';
+import path from 'path';
 
-class RedisService {
-    constructor() {
-        this.client = null;
-        this.isAvailable = false;
+const memory = new Map();
+const CACHE_FILE = path.resolve('./tmp/redis-fallback-cache.json');
+
+// Ensure cache directory exists
+const ensureCacheDir = async () => {
+  try {
+    await fs.mkdir('./tmp', { recursive: true });
+  } catch (err) {
+    // Directory already exists or other error - ignore
+  }
+};
+
+// Load cache from file on startup
+const loadCacheFromFile = async () => {
+  try {
+    await ensureCacheDir();
+    const data = await fs.readFile(CACHE_FILE, 'utf-8');
+    const cached = JSON.parse(data);
+    const now = Date.now();
+    for (const [key, entry] of Object.entries(cached)) {
+      if (entry.expiresAt > now) {
+        memory.set(key, entry);
+      }
     }
+    console.log(`📦 Redis fallback cache loaded: ${memory.size} valid entries`);
+  } catch (err) {
+    // File doesn't exist or is corrupted - start fresh
+    console.log('📦 No Redis fallback cache found, starting fresh');
+  }
+};
 
-    // Initialize Redis connection (optional)
-    async connect() {
-        try {
-            // Check if Upstash credentials are provided
-            if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-                console.log('⚠️  Redis not configured - app will work without caching');
-                console.log('   Add UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to .env to enable Redis');
-                this.isAvailable = false;
-                return;
-            }
-
-            this.client = new Redis({
-                url: process.env.UPSTASH_REDIS_REST_URL,
-                token: process.env.UPSTASH_REDIS_REST_TOKEN,
-            });
-
-            // Test connection
-            await this.client.ping();
-            this.isAvailable = true;
-            console.log('✅ Redis connected (Upstash) - caching enabled');
-        } catch (error) {
-            console.log('⚠️  Redis not available - app will work without caching');
-            console.log('   Error:', error.message);
-            this.isAvailable = false;
-        }
+// Save cache to file periodically
+const saveCacheToFile = async () => {
+  try {
+    await ensureCacheDir();
+    const cacheData = {};
+    const now = Date.now();
+    for (const [key, entry] of memory.entries()) {
+      if (entry.expiresAt > now) {
+        cacheData[key] = entry;
+      }
     }
+    await fs.writeFile(CACHE_FILE, JSON.stringify(cacheData, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('❌ Failed to save Redis fallback cache:', err.message);
+  }
+};
 
-    // Disconnect gracefully
-    async disconnect() {
-        if (this.isAvailable) {
-            console.log('✅ Redis disconnected');
-            this.isAvailable = false;
-        }
+// Check if Redis is connected and healthy
+const isRedisConnected = () => {
+  return redisClient.isOpen;
+};
+
+// Load cache from file on module load
+loadCacheFromFile().catch(() => {});
+
+// Save cache to file every 30 seconds
+setInterval(() => {
+  saveCacheToFile().catch(() => {});
+}, 30 * 1000);
+
+const setValue = async (key, value, ttlSeconds) => {
+  memory.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+  await safeRedisOperation(() =>
+    redisClient.set(key, JSON.stringify(value), { EX: ttlSeconds }),
+  );
+  // Persist to file immediately for critical data like OTPs
+  await saveCacheToFile().catch(() => {});
+};
+
+const getValue = async (key) => {
+  const cached = memory.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  memory.delete(key);
+  const remote = await safeRedisOperation(() => redisClient.get(key));
+  return remote ? JSON.parse(remote) : null;
+};
+
+// Cleanup expired entries from memory cache periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of memory.entries()) {
+    if (entry.expiresAt <= now) {
+      memory.delete(key);
     }
+  }
+}, 60 * 1000); // Cleanup every 60 seconds
 
-    // Store temporary metadata with TTL (time to live)
-    async setTemp(key, value, ttlSeconds = 3600) {
-        if (!this.isAvailable) return false;
-        try {
-            const data = typeof value === 'string' ? value : JSON.stringify(value);
-            await this.client.set(key, data, { ex: ttlSeconds });
-            return true;
-        } catch (error) {
-            console.error('Redis SET error:', error.message);
-            return false;
-        }
+const redisService = {
+  setVerificationCode: (email, code, ttl, purpose = "default") => {
+    if (!isRedisConnected()) {
+      console.warn('⚠️  Redis not connected. OTP stored in file-backed cache (persists across restarts).');
     }
-
-    // Get temporary metadata
-    async getTemp(key) {
-        if (!this.isAvailable) return null;
-        try {
-            const data = await this.client.get(key);
-            if (!data) return null;
-            try {
-                return JSON.parse(data);
-            } catch {
-                return data;
-            }
-        } catch (error) {
-            console.error('Redis GET error:', error.message);
-            return null;
-        }
+    return setValue(`verification:${purpose}:${email}`, code, ttl);
+  },
+  getVerificationCode: (email, purpose = "default") => {
+    if (!isRedisConnected()) {
+      console.warn('⚠️  Redis not connected. Checking file-backed OTP cache.');
     }
+    return getValue(`verification:${purpose}:${email}`);
+  },
+  deleteVerificationCode: (email, purpose = "default") => {
+    const key = `verification:${purpose}:${email}`;
+    memory.delete(key);
+    return safeRedisOperation(() => redisClient.del(key));
+  },
+  setSession: (userId, session, ttl) => setValue(`session:${userId}`, session, ttl),
+  incrementRateLimit: async (key, ttl) => {
+    const count = ((await getValue(`rate:${key}`)) || 0) + 1;
+    await setValue(`rate:${key}`, count, ttl);
+    return { count };
+  },
+};
 
-    // Delete temporary metadata
-    async deleteTemp(key) {
-        if (!this.isAvailable) return false;
-        try {
-            await this.client.del(key);
-            return true;
-        } catch (error) {
-            console.error('Redis DEL error:', error.message);
-            return false;
-        }
-    }
-
-    // Check if key exists
-    async exists(key) {
-        if (!this.isAvailable) return false;
-        try {
-            return await this.client.exists(key);
-        } catch (error) {
-            console.error('Redis EXISTS error:', error.message);
-            return false;
-        }
-    }
-
-    // Store session data (15 minutes default)
-    async setSession(userId, sessionData, ttl = 900) {
-        return await this.setTemp(`session:${userId}`, sessionData, ttl);
-    }
-
-    // Get session data
-    async getSession(userId) {
-        return await this.getTemp(`session:${userId}`);
-    }
-
-    // Store rate limiting data
-    async incrementRateLimit(identifier, windowSeconds = 60) {
-        if (!this.isAvailable) return { count: 1, limited: false };
-        try {
-            const key = `ratelimit:${identifier}`;
-            const count = await this.client.incr(key);
-            if (count === 1) {
-                await this.client.expire(key, windowSeconds);
-            }
-            return { count, limited: false };
-        } catch (error) {
-            console.error('Redis rate limit error:', error.message);
-            return { count: 1, limited: false };
-        }
-    }
-
-    // Store verification codes temporarily
-    async setVerificationCode(email, code, ttl = 900) {
-        return await this.setTemp(`verify:${email}`, code, ttl);
-    }
-
-    async getVerificationCode(email) {
-        return await this.getTemp(`verify:${email}`);
-    }
-
-    // Cache API responses
-    async cacheResponse(key, data, ttl = 300) {
-        return await this.setTemp(`cache:${key}`, data, ttl);
-    }
-
-    async getCachedResponse(key) {
-        return await this.getTemp(`cache:${key}`);
-    }
-}
-
-// Export singleton instance
-const redisService = new RedisService();
 export default redisService;

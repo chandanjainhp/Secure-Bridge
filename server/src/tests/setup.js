@@ -1,25 +1,28 @@
-/**
- * Jest Test Setup
- * Global configuration and utilities for tests
- */
+import 'dotenv/config';
+import { jest } from '@jest/globals';
 
-// Set test environment variables
-process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = 'test-secret-key-for-testing-only';
-process.env.ENCRYPTION_MODE = 'mock';
-process.env.MONGODB_URI = 'mongodb://localhost:27017/secure-bridge-test';
-process.env.OUTBOUND_ALLOWLIST = '["httpbin.org","localhost","127.0.0.1"]';
-process.env.MCP_TOOL_AUTONOMY = 'fetch-allowed';
+jest.setTimeout(30000);
 
-// Global test utilities
-global.mockUser = {
-  _id: 'test-user-id',
-  email: 'test@example.com',
-  username: 'testuser',
-};
+process.env.NODE_ENV = 'development';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret';
+process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-refresh-secret';
+process.env.API_KEY_ENCRYPTION_SECRET = process.env.API_KEY_ENCRYPTION_SECRET || 'test-encryption-secret';
+process.env.SKIP_API_KEY_VALIDATION = 'true';
 
-global.mockApiKey = {
-  key: 'test-api-key',
-  userId: 'test-user-id',
-  status: 'active',
-};
+let mongod;
+
+beforeAll(async () => {
+  const { MongoMemoryServer } = await import('mongodb-memory-server');
+  mongod = await MongoMemoryServer.create();
+  const uri = mongod.getUri();
+  const { mongoose } = await import('mongoose');
+  await mongoose.connect(uri);
+});
+
+afterAll(async () => {
+  const { mongoose } = await import('mongoose');
+  await mongoose.disconnect();
+  if (mongod) {
+    await mongod.stop();
+  }
+});

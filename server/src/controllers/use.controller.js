@@ -1,612 +1,565 @@
-// Import the asyncHandler utility function from the utils folder
-// asyncHandler is a higher-order function that wraps async functions
-// It automatically catches any errors that occur in async operations
-// Without this, you'd need to write try-catch blocks in every async controller
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { User } from "../models/user.model.js";
-// import { uploadOnCloudinary } from "../utils/cloudinary.js";
-// import { request } from "express";
 import jwt from "jsonwebtoken";
-import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from "../email/emails.js";
+import {
+  sendVerificationEmail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendOTPEmail,
+} from "../email/emails.js";
 import crypto from "crypto";
 import redisService from "../services/redis.service.js";
+import { upload } from "../middlewares/multer.middleware.js";
 
-// Define the registerUser controller function
-// This function handles complete user registration without file uploads
+// ============================================================
+// REGISTER USER
+// ============================================================
 const registerUser = asyncHandler(async (req, res) => {
-    
-    // Debug: Log the request body to see what we're receiving
-    console.log('Request body:', req.body);
-    console.log('Request headers:', req.headers);
-    
-    // STEP 1: Get user details from frontend (request body)
-    // Extract user data from the request body using destructuring
-    const { fullName, email, username, password } = req.body;
+  // Body is already validated + transformed by Zod middleware
+  const { fullName, email, username, password } = req.body;
 
-    // STEP 2: Validation - Check if all required fields are provided
-    // Use the some() method to check if any field is empty after trimming whitespace
-    if ([fullName, email, username, password].some((field) => field?.trim() === "")) {
-        // Check which specific fields are missing for better error messages
-        const missingFields = [];
-        if (!fullName?.trim()) missingFields.push("Full Name");
-        if (!email?.trim()) missingFields.push("Email");
-        if (!username?.trim()) missingFields.push("Username");
-        if (!password?.trim()) missingFields.push("Password");
-        
-        if (missingFields.length === 1) {
-            throw new ApiError(400, `${missingFields[0]} is required. Please provide your ${missingFields[0].toLowerCase()}.`);
-        } else {
-            throw new ApiError(400, `The following fields are required: ${missingFields.join(", ")}. Please fill in all required information.`);
-        }
+  // Check if user already exists with same username or email
+  const existedUser = await User.findOne({
+    $or: [{ username }, { email }],
+  });
+
+  if (existedUser) {
+    if (existedUser.email === email && existedUser.username === username) {
+      throw new ApiError(
+        409,
+        "A user with this email and username already exists. Please use different email and username.",
+      );
+    } else if (existedUser.email === email) {
+      throw new ApiError(
+        409,
+        "A user with this email already exists. Please use a different email address or try logging in.",
+      );
+    } else if (existedUser.username === username) {
+      throw new ApiError(
+        409,
+        "This username is already taken. Please choose a different username.",
+      );
+    } else {
+      throw new ApiError(409, "User with email or username already exists");
     }
+  }
 
-    // Additional validation for email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        throw new ApiError(400, "Please provide a valid email address (e.g., user@example.com).");
-    }
+  // Create user object and save to database
+  const user = await User.create({
+    fullName,
+    email,
+    password,
+    username: username.toLowerCase(),
+    isVerified: false,
+  });
 
-    // Additional validation for username format
-    if (username.length < 3) {
-        throw new ApiError(400, "Username must be at least 3 characters long.");
-    }
+  // Generate verification token and send email
+  const verificationCode = user.generateVerificationToken();
+  await user.save({ validateBeforeSave: false });
 
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-        throw new ApiError(400, "Username can only contain letters, numbers, and underscores.");
-    }
+  await redisService.setVerificationCode(email, verificationCode, 900, "verification");
 
-    // Additional validation for password strength
-    if (password.length < 6) {
-        throw new ApiError(400, "Password must be at least 6 characters long for security.");
-    }
+  try {
+    await sendVerificationEmail(email, verificationCode);
+    console.log(`Verification email sent to ${email}`);
+  } catch (emailError) {
+    console.error("Failed to send verification email:", emailError);
+  }
 
-    // STEP 3: Check if user already exists with same username or email
-    // Use MongoDB's $or operator to check both username and email
-    // FIXED: Added 'await' keyword since User.findOne() returns a Promise
-    const existedUser = await User.findOne({
-        $or: [{ username }, { email }]
-    });
+  // Remove password and refresh token from response
+  const createdUser = await User.findById(user._id).select(
+    "-password -refreshToken -verificationToken -verificationTokenExpires",
+  );
 
-    // If user already exists, provide specific error message
-    if (existedUser) {
-        // Check which field is conflicting for better error messages
-        if (existedUser.email === email && existedUser.username === username) {
-            throw new ApiError(409, "A user with this email and username already exists. Please use different email and username.");
-        } else if (existedUser.email === email) {
-            throw new ApiError(409, "A user with this email already exists. Please use a different email address or try logging in.");
-        } else if (existedUser.username === username) {
-            throw new ApiError(409, "This username is already taken. Please choose a different username.");
-        } else {
-            throw new ApiError(409, "User with email or username already exists");
-        }
-    }
+  if (!createdUser) {
+    throw new ApiError(500, "Something went wrong while registering the user");
+  }
 
-    // STEP 4: Create user object and save to database
-    // Create new user with all the provided data (no file uploads needed)
-    const user = await User.create({
-        fullName,
-        email,
-        password, // Note: Password should be hashed in the User model (using pre-save middleware)
-        username: username.toLowerCase(),
-        isVerified: false // User starts as unverified
-    });
-
-    // STEP 5: Generate verification token and send email
-    const verificationCode = user.generateVerificationToken();
-    await user.save({ validateBeforeSave: false });
-    
-    // Store verification code in Redis (15 min expiry) - Optional enhancement
-    await redisService.setVerificationCode(email, verificationCode, 900);
-    
-    try {
-        // Send verification email
-        await sendVerificationEmail(email, verificationCode);
-        console.log(`Verification email sent to ${email}`);
-    } catch (emailError) {
-        console.error('Failed to send verification email:', emailError);
-        // Don't throw error here - user is still created, just email failed
-    }
-
-    // STEP 6: Remove password and refresh token from response
-    // Fetch the created user but exclude sensitive fields using select()
-    const createdUser = await User.findById(user._id).select(
-        "-password -refreshToken -verificationToken -verificationTokenExpires"
-    );
-
-    // STEP 7: Check for user creation and return response
-    if (!createdUser) {
-        throw new ApiError(500, "Something went wrong while registering the user");
-    }
-
-    // STEP 8: Return success response
-    // Send success response with created user data and verification message
-    return res.status(201).json(
-        new ApiResponse(
-            200, 
-            createdUser, 
-            "User registered successfully. Please check your email for verification code."
-        )
+  return res
+    .status(201)
+    .json(
+      new ApiResponse(
+        201,
+        createdUser,
+        "User registered successfully. Please check your email for verification code.",
+      ),
     );
 });
 
-// Helper function to generate access and refresh tokens for a user
+// ============================================================
+// TOKEN GENERATION HELPER
+// ============================================================
 async function generateAccessAndRefreshTokens(userId, extendedSession = false) {
-    try {
-        // Find the user by their ID
-        const user = await User.findById(userId);
+  try {
+    const user = await User.findById(userId);
 
-        // Defensive: Check if user exists
-        if (!user) {
-            throw new ApiError(404, "User not found while generating tokens");
-        }
-
-        // Generate access and refresh tokens using user instance methods
-        const accessToken = user.generateAccessToken(extendedSession);
-        const refreshToken = user.generateRefreshToken(extendedSession);
-
-        // Store the refresh token in the user document
-        user.refreshToken = refreshToken;
-
-        // Save the updated user document
-        // FIXED: Changed 'ValiditeBeforSave' to 'validateBeforeSave' (correct spelling)
-        await user.save({ validateBeforeSave: false });
-
-        // Return both tokens
-        return { accessToken, refreshToken };
-    } catch (error) {
-        // Wrap and rethrow errors as ApiError for consistent error handling
-        throw new ApiError(500, "Something went wrong while generating refresh and access token");
+    if (!user) {
+      throw new ApiError(404, "User not found while generating tokens");
     }
+
+    const accessToken = user.generateAccessToken(extendedSession);
+    const refreshToken = user.generateRefreshToken(extendedSession);
+
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    return { accessToken, refreshToken };
+  } catch (error) {
+    throw new ApiError(
+      500,
+      "Something went wrong while generating refresh and access token",
+    );
+  }
 }
 
-// Controller function to handle user login
+// ============================================================
+// LOGIN
+// ============================================================
 const login = asyncHandler(async (req, res) => {
-    // Extract credentials from request body
-    const { email, username, password, rememberMe } = req.body;
+  const { email, username, password, rememberMe } = req.body;
 
-    // Rate limiting check (optional - 10 login attempts per minute per IP)
-    const ipAddress = req.ip || req.connection.remoteAddress;
-    const rateLimit = await redisService.incrementRateLimit(`login:${ipAddress}`, 60);
-    if (rateLimit.count > 10) {
-        throw new ApiError(429, "Too many login attempts. Please try again in a minute.");
-    }
-
-    // Ensure either email or username is provided
-    if (!(email || username)) {
-        throw new ApiError(400, "Please provide either email or username to login.");
-    }
-
-    // Find the user by username or email
-    const user = await User.findOne({
-        $or: [{ username }, { email }]
-    });
-
-    // If user not found, throw error with helpful message
-    if (!user) {
-        const identifier = email ? `email "${email}"` : `username "${username}"`;
-        throw new ApiError(404, `No account found with ${identifier}. Please check your credentials or register a new account.`);
-    }
-
-    // Check if user's email is verified (skip in development mode)
-    if (!user.isVerified && process.env.NODE_ENV !== 'development') {
-        throw new ApiError(403, `Your email (${user.email}) is not verified yet. Please check your email for the verification code and verify your account before logging in.`);
-    }
-    
-    // In development mode, show a warning if user is not verified
-    if (!user.isVerified && process.env.NODE_ENV === 'development') {
-        console.log('⚠️  Development Mode: Allowing login for unverified user:', user.email);
-    }
-
-    // Check if password is provided
-    if (!password) {
-        throw new ApiError(400, "Password is required to login.");
-    }
-
-    // Validate the provided password
-    const passwordValid = await user.isPasswordCorrect(password);
-
-    // If password is incorrect, throw error
-    if (!passwordValid) {
-        throw new ApiError(401, "Incorrect password. Please check your password and try again.");
-    }
-
-    // Generate access and refresh tokens (with extended session if rememberMe is true)
-    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id, rememberMe);
-
-    // Fetch user data without sensitive fields
-    const loggedInUser = await User.findById(user._id)
-        .select("-password -refreshToken");
-
-    // Cache user session in Redis (optional - 1 hour)
-    await redisService.setSession(user._id.toString(), {
-        userId: user._id,
-        email: user.email,
-        username: user.username,
-        lastLogin: new Date().toISOString()
-    }, 3600);
-
-    // Cookie options for security
-    const options = {
-        httpOnly: true, // Prevents client-side JS from accessing the cookie
-        secure: true,   // Ensures cookie is sent over HTTPS only
-        maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000, // 30 days if remember me, otherwise 1 day
-    };
-
-    // Send response with cookies and user data
-    return res
-        .status(200)
-        .cookie("accessToken", accessToken, options)
-        .cookie("refreshToken", refreshToken, options)
-        .json(
-            new ApiResponse(
-                200,
-                {
-                    user: loggedInUser,
-                    accessToken,
-                    refreshToken
-                },
-                "User logged in successfully"
-            )
-        );
-});
-
-const logoutUser = asyncHandler(async (req, res) => {
-    // Update user document to remove refresh token
-    await User.findByIdAndUpdate(
-        req.user._id,
-        {
-            $set: {
-                refreshToken: undefined
-            }
-        },
-        {
-            new: true
-        }
+  // Rate limiting check (10 login attempts per minute per IP)
+  const ipAddress = req.ip || req.socket?.remoteAddress;
+  const rateLimit = await redisService.incrementRateLimit(
+    `login:${ipAddress}`,
+    60,
+  );
+  if (rateLimit.count > 10) {
+    throw new ApiError(
+      429,
+      "Too many login attempts. Please try again in a minute.",
     );
+  }
 
-    // Cookie options for security
+  // Find the user by username or email
+  const user = await User.findOne({
+    $or: [{ username }, { email }],
+  });
+
+  if (!user) {
+    const identifier = email ? `email "${email}"` : `username "${username}"`;
+    throw new ApiError(
+      404,
+      `No account found with ${identifier}. Please check your credentials or register a new account.`,
+    );
+  }
+
+  // Check if user's email is verified (skip in development mode)
+  if (!user.isVerified && process.env.NODE_ENV !== "development") {
+    throw new ApiError(
+      403,
+      `Your email (${user.email}) is not verified yet. Please check your email for the verification code and verify your account before logging in.`,
+    );
+  }
+  if (!user.isVerified && process.env.NODE_ENV === "development") {
+    console.log(
+      "⚠️ Development Mode: Allowing login for unverified user:",
+      user.email,
+    );
+  }
+
+  // Validate the provided password
+  const passwordValid = await user.isPasswordCorrect(password);
+  if (!passwordValid) {
+    throw new ApiError(
+      401,
+      "Incorrect password. Please check your password and try again.",
+    );
+  }
+
+  // Generate access and refresh tokens
+  const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
+    user._id,
+    rememberMe,
+  );
+
+  const loggedInUser = await User.findById(user._id).select(
+    "-password -refreshToken",
+  );
+
+  await redisService.setSession(
+    user._id.toString(),
+    {
+      userId: user._id,
+      email: user.email,
+      username: user.username,
+      lastLogin: new Date().toISOString(),
+    },
+    3600,
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000,
+  };
+
+  return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(
+        200,
+        { user: loggedInUser },
+        "User logged in successfully",
+      ),
+    );
+});
+
+// ============================================================
+// LOGOUT
+// ============================================================
+const logoutUser = asyncHandler(async (req, res) => {
+  // Use $unset to actually remove the refresh token (not $set: undefined)
+  await User.findByIdAndUpdate(
+    req.user._id,
+    { $unset: { refreshToken: 1 } },
+    { new: true },
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  };
+
+  return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiResponse(200, {}, "User logged out successfully"));
+});
+
+// ============================================================
+// REFRESH ACCESS TOKEN
+// ============================================================
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  const incomingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken;
+
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "Unauthorized request");
+  }
+
+  try {
+    let decodedToken;
+    try {
+      decodedToken = jwt.verify(
+        incomingRefreshToken,
+        process.env.JWT_REFRESH_SECRET || process.env.REFRESH_TOKEN_SECRET,
+      );
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
+        throw new ApiError(
+          401,
+          "Refresh token has expired. Please log in again.",
+        );
+      }
+      throw new ApiError(401, "Invalid refresh token");
+    }
+
+    const user = await User.findById(decodedToken?._id);
+
+    if (!user) {
+      throw new ApiError(401, "Invalid refresh token");
+    }
+
+    if (incomingRefreshToken !== user?.refreshToken) {
+      throw new ApiError(401, "Refresh token is expired or used");
+    }
+
+    const { accessToken, refreshToken: newRefreshToken } =
+      await generateAccessAndRefreshTokens(user._id);
+
     const options = {
-        httpOnly: true, // Prevents client-side JS from accessing the cookie
-        secure: true,   // Ensures cookie is sent over HTTPS only
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
     };
 
-    // Clear cookies and send success response
     return res
-        .status(200)
-        .clearCookie("accessToken", options)
-        .clearCookie("refreshToken", options)
-        .json(new ApiResponse(200, {}, "User logged out successfully"));
+      .status(200)
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", newRefreshToken, options)
+      .json(
+        new ApiResponse(
+          200,
+          {},
+          "Access token refreshed successfully",
+        ),
+      );
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(401, "Invalid refresh token");
+  }
 });
 
-
-
-// Controller function to refresh access token using refresh token
-// This function allows users to get a new access token when the current one expires
-// without requiring them to log in again
-const refreshAccessToken = asyncHandler(async (req, res) => {
-    // STEP 1: Extract refresh token from cookies or request body
-    // Check both cookies and body to support different client implementations
-    // Web browsers typically send cookies, mobile apps might send in body
-    const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken;
-
-    // STEP 2: Validate that refresh token exists
-    // If no refresh token is provided, user needs to login again
-    if (!incomingRefreshToken) {
-        throw new ApiError(401, "Unauthorized request");
-    }
-
-    try {
-        // STEP 3: Verify and decode the refresh token
-        // This checks if the token is valid and not expired
-        // FIXED: Added missing variable declaration and correct secret
-        const decodedToken = jwt.verify(
-            incomingRefreshToken,
-            process.env.REFRESH_TOKEN_SECRET // Use refresh token secret, not access token secret
-        );
-
-        // STEP 4: Find user from decoded token
-        // Extract user ID from the decoded token and fetch user from database
-        const user = await User.findById(decodedToken?._id);
-
-        // STEP 5: Check if user exists
-        // If user is not found, the token might be invalid or user was deleted
-        if (!user) {
-            throw new ApiError(401, "Invalid refresh token");
-        }
-
-        // STEP 6: Verify refresh token matches stored token
-        // Compare the incoming token with the one stored in database
-        // This prevents token reuse attacks and ensures token validity
-        // FIXED: Corrected property name from refreshAccessToken to refreshToken
-        if (incomingRefreshToken !== user?.refreshToken) {
-            throw new ApiError(401, "Refresh token is expired or used");
-        }
-
-        // STEP 7: Generate new tokens
-        // Create fresh access and refresh tokens for the user
-        const { accessToken, refreshToken: newRefreshToken } = await generateAccessAndRefreshTokens(user._id);
-
-        // STEP 8: Set cookie options for security
-        // Configure secure cookie settings
-        const options = {
-            httpOnly: true, // Prevents client-side JS from accessing cookies
-            secure: true,   // Ensures cookies are sent over HTTPS only
-        };
-
-        // STEP 9: Send response with new tokens
-        // Return new tokens both in cookies and response body
-        return res
-            .status(200)
-            .cookie("accessToken", accessToken, options)
-            .cookie("refreshToken", newRefreshToken, options)
-            .json(
-                new ApiResponse(
-                    200,
-                    {
-                        accessToken,
-                        refreshToken: newRefreshToken
-                    },
-                    "Access token refreshed successfully"
-                )
-            );
-
-    } catch (error) {
-        // STEP 10: Handle any errors during token refresh
-        // This could be due to invalid token, expired token, or database errors
-        throw new ApiError(401, error?.message || "Invalid refresh token");
-    }
-});
-
-
-// Controller function to change user's current password
-// This function allows authenticated users to update their password
-// Requires both old password (for verification) and new password
+// ============================================================
+// CHANGE CURRENT PASSWORD
+// ============================================================
 const changeCurrentPassword = asyncHandler(async (req, res) => {
-    // STEP 1: Extract old and new passwords from request body
-    const { oldPassword, newPassword } = req.body;
+  const { oldPassword, newPassword } = req.body;
 
-    // STEP 2: Validate that both passwords are provided
-    if (!oldPassword || !newPassword) {
-        throw new ApiError(400, "Both old and new passwords are required");
-    }
+  const user = await User.findById(req.user?._id);
 
-    // STEP 3: Find the current user from the database
-    // req.user._id comes from the JWT middleware (verifyJWT)
-    // FIXED: Changed req.user?.id to req.user?._id (correct property name)
-    const user = await User.findById(req.user?._id);
+  // Defensive: check if user exists (prevents TypeError on null)
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
 
-    // STEP 4: Verify the old password is correct
-    // Use the user model's method to check password
-    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+  const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+  if (!isPasswordCorrect) {
+    throw new ApiError(400, "Invalid old password");
+  }
 
-    // STEP 5: If old password is incorrect, throw error
-    if (!isPasswordCorrect) {
-        // FIXED: Changed throw new Error to throw new ApiError for consistency
-        throw new ApiError(400, "Invalid old password");
-    }
+user.password = newPassword;
+user.refreshToken = null; // Invalidate existing refresh tokens for security
+await user.save({ validateBeforeSave: false });
 
-    // STEP 6: Update the user's password
-    // The new password will be automatically hashed by the User model's pre-save middleware
-    user.password = newPassword;
-    
-    // STEP 7: Save the updated user to database
-    // validateBeforeSave: false prevents running validation on other fields
-    await user.save({ validateBeforeSave: false });
-
-    // STEP 8: Return success response
-    // Don't include any sensitive data in response
-    return res
-        .status(200)
-        .json(new ApiResponse(200, {}, "Password changed successfully"));
+return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password changed successfully"));
 });
 
-// Controller function to get current authenticated user's information
-// This function returns the current user's data (excluding sensitive information)
+// ============================================================
+// GET CURRENT USER
+// ============================================================
 const getCurrentUser = asyncHandler(async (req, res) => {
-    // STEP 1: Return current user data
-    // req.user comes from JWT middleware and already excludes password and refreshToken
-    // FIXED: Corrected ApiResponse constructor parameters
-    return res
-        .status(200)
-        .json(new ApiResponse(200, req.user, "Current user fetched successfully"));
+  return res
+    .status(200)
+    .json(new ApiResponse(200, req.user, "Current user fetched successfully"));
 });
 
-// Controller function to update user's account details (non-sensitive information)
-// This function allows users to update their fullName and email
+// ============================================================
+// UPDATE ACCOUNT DETAILS
+// ============================================================
 const updateAccountDetails = asyncHandler(async (req, res) => {
-    // STEP 1: Extract account details from request body
-    const { fullName, email } = req.body;
+  const { fullName, email } = req.body;
 
-    // STEP 2: Validate that required fields are provided
-    if (!fullName || !email) {
-        throw new ApiError(400, "All fields are required");
-    }
+  const user = await User.findByIdAndUpdate(
+    req.user?._id,
+    { $set: { fullName, email } },
+    { new: true },
+  ).select("-password");
 
-    // STEP 3: Update user document in database
-    // FIXED: Added missing 'await' and 'const' keywords
-    // FIXED: Changed 'user.findByIdAndUpdate' to 'User.findByIdAndUpdate'
-    const user = await User.findByIdAndUpdate(
-        req.user?._id,
-        {
-            $set: {
-                fullName,
-                email: email
-            }
-        },
-        { new: true } // Returns the updated document
-    ).select("-password"); // Exclude password from response
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
 
-    // STEP 4: Check if user was found and updated
-    if (!user) {
-        throw new ApiError(404, "User not found");
-    }
-
-    // STEP 5: Return success response with updated user data
-    return res
-        .status(200)
-        .json(new ApiResponse(200, user, "Account details updated successfully"));
+  return res
+    .status(200)
+    .json(new ApiResponse(200, user, "Account details updated successfully"));
 });
 
-// Controller function to verify email with OTP
-// This function verifies the user's email using the 6-digit code sent via email
+// ============================================================
+// VERIFY EMAIL
+// ============================================================
 const verifyEmail = asyncHandler(async (req, res) => {
-    // STEP 1: Extract email and OTP from request body
-    const { email, otp } = req.body;
+  const { email, otp } = req.body;
 
-    // STEP 2: Validate that both email and OTP are provided
-    if (!email || !otp) {
-        throw new ApiError(400, "Email and verification code are required");
-    }
+  const user = await User.findOne({ email: email.toLowerCase() });
 
-    // STEP 3: Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
 
-    // STEP 4: Check if user exists
-    if (!user) {
-        throw new ApiError(404, "User not found");
-    }
-
-    // STEP 5: Check if user is already verified
-    if (user.isVerified) {
-        return res
-            .status(200)
-            .json(new ApiResponse(200, {}, "Email is already verified"));
-    }
-
-    // STEP 6: Check if verification token matches and is not expired
-    if (user.verificationToken !== otp) {
-        throw new ApiError(400, "Invalid verification code");
-    }
-
-    if (user.verificationTokenExpires < new Date()) {
-        throw new ApiError(400, "Verification code has expired");
-    }
-
-    // STEP 7: Update user verification status
-    user.isVerified = true;
-    user.verificationToken = undefined;
-    user.verificationTokenExpires = undefined;
-    await user.save({ validateBeforeSave: false });
-
-    // STEP 8: Send welcome email
-    try {
-        await sendWelcomeEmail(user.email, user.fullName);
-        console.log(`Welcome email sent to ${user.email}`);
-    } catch (emailError) {
-        console.error('Failed to send welcome email:', emailError);
-        // Don't throw error - verification is complete
-    }
-
-    // STEP 9: Return success response
+  if (user.isVerified) {
     return res
-        .status(200)
-        .json(new ApiResponse(200, {}, "Email verified successfully"));
+      .status(200)
+      .json(new ApiResponse(200, {}, "Email is already verified"));
+  }
+
+  if (user.verificationToken !== otp) {
+    throw new ApiError(400, "Invalid verification code");
+  }
+
+  if (user.verificationTokenExpires < new Date()) {
+    throw new ApiError(400, "Verification code has expired");
+  }
+
+  user.isVerified = true;
+  user.verificationToken = undefined;
+  user.verificationTokenExpires = undefined;
+  await user.save({ validateBeforeSave: false });
+
+  try {
+    await sendWelcomeEmail(user.email, user.fullName);
+    console.log(`Welcome email sent to ${user.email}`);
+  } catch (emailError) {
+    console.error("Failed to send welcome email:", emailError);
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Email verified successfully"));
 });
 
-// Controller function to resend verification email
-// This function generates a new verification code and sends it via email
+// ============================================================
+// RESEND VERIFICATION EMAIL
+// ============================================================
 const resendVerificationEmail = asyncHandler(async (req, res) => {
-    // STEP 1: Extract email and purpose from request body
-    const { email, purpose } = req.body; // purpose can be 'verification' or 'reset'
+  const { email, purpose } = req.body;
 
-    // STEP 2: Validate that email is provided
-    if (!email) {
-        throw new ApiError(400, "Email is required");
-    }
+  const user = await User.findOne({ email: email.toLowerCase() });
 
-    // STEP 3: Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
 
-    // STEP 4: Check if user exists
-    if (!user) {
-        throw new ApiError(404, "User not found");
-    }
-
-    // STEP 5: For email verification, check if user is already verified
-    if (purpose !== 'reset' && user.isVerified) {
-        return res
-            .status(200)
-            .json(new ApiResponse(200, {}, "Email is already verified"));
-    }
-
-    // STEP 6: Generate new verification token with 15-minute expiration
-    const verificationCode = user.generateVerificationToken();
-    
-    // Set expiration to 15 minutes from now
-    user.verificationTokenExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
-    
-    await user.save({ validateBeforeSave: false });
-
-    // Store in Redis for faster lookup (15 min expiry) - Optional enhancement
-    await redisService.setVerificationCode(email, verificationCode, 900);
-
-    // STEP 7: Send appropriate email based on purpose
-    try {
-        if (purpose === 'reset') {
-            await sendPasswordResetEmail(email, verificationCode);
-            console.log(`Password reset email sent to ${email}`);
-        } else {
-            await sendVerificationEmail(email, verificationCode);
-            console.log(`New verification email sent to ${email}`);
-        }
-    } catch (emailError) {
-        console.error('Failed to send email:', emailError);
-        throw new ApiError(500, "Failed to send email");
-    }
-
-    // STEP 8: Return success response
-    const message = purpose === 'reset' 
-        ? "Password reset code sent successfully. Check your email." 
-        : "Verification email sent successfully";
-    
+  if (purpose !== "reset" && user.isVerified) {
     return res
-        .status(200)
-        .json(new ApiResponse(200, {}, message));
+      .status(200)
+      .json(new ApiResponse(200, {}, "Email is already verified"));
+  }
+
+  // Generate new verification token with 15-minute expiration
+  const verificationCode = user.generateVerificationToken();
+  await user.save({ validateBeforeSave: false });
+
+  await redisService.setVerificationCode(email, verificationCode, 900, purpose === "reset" ? "reset" : "verification");
+
+  try {
+    if (purpose === "reset") {
+      await sendPasswordResetEmail(email, verificationCode);
+      console.log(`Password reset email sent to ${email}`);
+    } else {
+      await sendVerificationEmail(email, verificationCode);
+      console.log(`New verification email sent to ${email}`);
+    }
+  } catch (emailError) {
+    console.error("Failed to send email:", emailError);
+    throw new ApiError(500, "Failed to send email");
+  }
+
+  const message =
+    purpose === "reset"
+      ? "Password reset code sent successfully. Check your email."
+      : "Verification email sent successfully";
+
+  return res.status(200).json(new ApiResponse(200, {}, message));
 });
 
-// Reset password without old password (for forgot password flow)
+// ============================================================
+// VERIFY PASSWORD RESET CODE
+// ============================================================
+const verifyResetCode = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const user = await User.findOne({ email: email.toLowerCase() });
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const stored = await redisService.getVerificationCode(email, "reset");
+  if (!stored || stored !== otp) {
+    throw new ApiError(400, "Invalid or expired reset code");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Reset code verified successfully"));
+});
+
+// ============================================================
+// RESET PASSWORD (forgot-password flow)
+// ============================================================
 const resetPassword = asyncHandler(async (req, res) => {
-    // STEP 1: Extract email and new password from request
-    const { email, newPassword } = req.body;
+  console.log('🔍 [resetPassword] Request received:', {
+    body: req.body,
+    ip: req.ip
+  });
 
-    // STEP 2: Validate inputs
-    if (!email || !newPassword) {
-        throw new ApiError(400, "Email and new password are required");
-    }
+  const { email, otp, newPassword } = req.body;
 
-    // STEP 3: Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
+  console.log('🔍 [resetPassword] Parsed body:', { email, otp, newPassword });
 
-    if (!user) {
-        throw new ApiError(404, "User not found");
-    }
+  const user = await User.findOne({ email: email.toLowerCase() });
+  console.log('🔍 [resetPassword] User found:', !!user);
 
-    // STEP 4: Check if user is verified (they must have verified via OTP first)
-    if (!user.isVerified) {
-        throw new ApiError(403, "Please verify your email first before resetting password");
-    }
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
 
-    // STEP 5: Update password (the pre-save hook will hash it)
-    user.password = newPassword;
-    await user.save({ validateBeforeSave: false });
+  if (!user.isVerified) {
+    throw new ApiError(
+      403,
+      "Please verify your email first before resetting password",
+    );
+  }
 
-    // STEP 6: Return success response
-    return res
-        .status(200)
-        .json(new ApiResponse(200, {}, "Password reset successfully. You can now login with your new password."));
+  const stored = await redisService.getVerificationCode(email, "reset");
+  console.log('🔍 [resetPassword] Redis check result:', {
+    email,
+    otp,
+    stored,
+    match: stored === otp,
+    typeOfStored: typeof stored,
+    typeOfOtp: typeof otp
+  });
+
+  if (!stored || stored !== otp) {
+    console.error('❌ [resetPassword] OTP mismatch or not found');
+    throw new ApiError(400, "Invalid or expired reset code");
+  }
+
+user.password = newPassword;
+user.refreshToken = null; // Invalidate existing refresh tokens for security
+await user.save({ validateBeforeSave: false });
+
+await redisService.deleteVerificationCode(email, "reset");
+
+console.log('✅ [resetPassword] Password reset successful for:', email);
+
+return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        {},
+        "Password reset successfully. You can now login with your new password.",
+      ),
+    );
 });
 
-export { 
-    registerUser, 
-    login, 
-    logoutUser, 
-    refreshAccessToken,
-    changeCurrentPassword,
-    getCurrentUser,
-    updateAccountDetails,
-    verifyEmail,
-    resendVerificationEmail,
-    resetPassword
+// ============================================================
+// UPLOAD AVATAR
+// ============================================================
+const uploadAvatar = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user?._id);
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  if (!req.file) {
+    throw new ApiError(400, "No file uploaded");
+  }
+
+  const avatarUrl = `/temp/${req.file.filename}`;
+  user.avatarUrl = avatarUrl;
+  await user.save({ validateBeforeSave: false });
+
+  const updatedUser = await User.findById(user._id).select("-password -refreshToken");
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, updatedUser, "Avatar uploaded successfully"));
+});
+
+export {
+  registerUser,
+  login,
+  logoutUser,
+  refreshAccessToken,
+  changeCurrentPassword,
+  getCurrentUser,
+  updateAccountDetails,
+  verifyEmail,
+  resendVerificationEmail,
+  verifyResetCode,
+  resetPassword,
+  uploadAvatar,
 };

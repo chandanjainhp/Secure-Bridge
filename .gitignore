@@ -25,6 +25,7 @@ pnpm-debug.log*           # pnpm error logs
 .env.production.local     # Production environment variables
 .env.*.local              # Any other local env files
 *.env                     # All .env files
+server/.env               # Server environment variables
 
 # API Keys and Secrets
 secrets/                  # Folder containing secret files
@@ -251,3 +252,5 @@ scratch/
 
 # Generated documentation (if auto-generated)
 # docs/generated/
+node_modules
+node_modules

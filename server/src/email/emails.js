@@ -24,6 +24,17 @@ const sendEmail = async ({ to, subject, html, category, templateUuid, templateVa
   }
 };
 
+// Send OTP email for login/registration
+export const sendOTPEmail = async (email, otp) => {
+  console.log(`Sending OTP email to ${email}...`);
+  return sendEmail({
+    to: email,
+    subject: "Your Secure Bridge verification code",
+    html: VERIFICATION_EMAIL_TEMPLATE.replace("{verificationCode}", otp),
+    category: "OTP Email",
+  });
+};
+
 // Send verification email
 export const sendVerificationEmail = async (email, verificationToken) => {
   console.log(`Sending verification email to ${email}...`);  // Debug log

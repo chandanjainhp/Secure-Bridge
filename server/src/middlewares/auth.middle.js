@@ -28,7 +28,7 @@ export const verifyJWT = asyncHandler(async (req, _res, next) => {
         // Use jwt.verify() to decode and validate the token
         // This checks if the token is valid and not expired
         // FIXED: Store the decoded token result in a variable
-        const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+        const decodedToken = jwt.verify(token, process.env.JWT_SECRET || process.env.ACCESS_TOKEN_SECRET);
 
         // STEP 4: Find user from decoded token
         // Extract user ID from the decoded token and fetch user from database

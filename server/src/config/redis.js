@@ -51,8 +51,13 @@ const connectRedis = async () => {
         if (!redisClient.isOpen) {
             await redisClient.connect();
         }
+        if (redisClient.isOpen) {
+            console.log('✅ Redis: Connected and ready for OTP storage');
+        }
     } catch (error) {
         console.error('❌ Failed to connect to Redis:', error.message);
+        console.warn('⚠️  OTP verification will use in-memory cache (OTPs lost on server restart)');
+        console.warn('⚠️  To fix: Start Redis server with: redis-server');
         // Don't throw - let the app run without Redis if it fails
         // Redis is for caching/temporary data, not critical
     }
