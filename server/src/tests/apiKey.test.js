@@ -3,6 +3,7 @@ import { app } from '../app.js';
 import { User } from '../models/user.model.js';
 import { ApiKey } from '../models/apikey.model.js';
 import jwt from 'jsonwebtoken';
+import { jest } from '@jest/globals';
 
 jest.mock('axios', () => ({
   get: jest.fn(() => Promise.resolve({ status: 200, data: { data: [] } })),
