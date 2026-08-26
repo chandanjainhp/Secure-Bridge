@@ -47,13 +47,9 @@ describe('Auth API', () => {
     expect(res.status).toBe(200);
     expect(res.body.data).toBeDefined();
     expect(res.body.data.user).toBeDefined();
-    const cookies = res.headers['set-cookie'];
-    expect(cookies).toBeDefined();
-    const accessTokenCookie = cookies.find(c => c.startsWith('accessToken='));
-    expect(accessTokenCookie).toBeDefined();
-    const match = accessTokenCookie.match(/accessToken=([^;]+)/);
-    expect(match).toBeTruthy();
-    authToken = match[1];
+    expect(res.body.data.accessToken).toBeDefined();
+    expect(res.body.data.refreshToken).toBeDefined();
+    authToken = res.body.data.accessToken;
   });
 
   it('should reject invalid credentials', async () => {
