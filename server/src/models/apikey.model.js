@@ -296,12 +296,6 @@ apiKeySchema.statics.verifyKey = function(providedKey) {
 
 // Validate external API key format
 apiKeySchema.statics.validateExternalKeyFormat = function(apiKey, provider) {
-  // Add debug logging
-  console.log('🔍 DEBUG: Validating external key format');
-  console.log('  Provider:', provider);
-  console.log('  Key length:', apiKey ? apiKey.length : 'null');
-  console.log('  Key starts with:', apiKey ? apiKey.substring(0, 6) + '...' : 'null');
-  
   const validations = {
     openai: {
       pattern: /^sk-[A-Za-z0-9]{48}$/,
@@ -342,26 +336,18 @@ apiKeySchema.statics.validateExternalKeyFormat = function(apiKey, provider) {
   };
 
   const validation = validations[provider];
-  console.log('  Validation object found:', !!validation);
-  console.log('  Available providers:', Object.keys(validations));
   
   if (!validation) {
-    console.log('❌ Unsupported provider:', provider);
-    return { valid: false, message: 'Unsupported provider' };
+    return { valid: false, message: 'Unsupported provider', provider };
   }
 
   const isValid = validation.pattern.test(apiKey);
-  console.log('  Pattern test result:', isValid);
-  console.log('  Pattern:', validation.pattern.toString());
   
-  const result = {
+  return {
     valid: isValid,
     message: isValid ? 'Valid format' : `Invalid format. ${validation.description}`,
     provider
   };
-  
-  console.log('  Final result:', result);
-  return result;
 };
 
 // Encryption utilities for external API keys

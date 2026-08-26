@@ -292,10 +292,12 @@ export const securityHeaders = (req, res, next) => {
 };
 
 // Request logging middleware for security monitoring
+const isDev = process.env.NODE_ENV === 'development';
+
 export const securityLogging = (req, res, next) => {
   const startTime = Date.now();
   
-  // Log suspicious patterns
+  // Log suspicious patterns (only in development, or sanitized in production)
   const suspiciousPatterns = [
     /\.\./,  // Directory traversal
     /<script/i, // XSS attempts
@@ -309,13 +311,13 @@ export const securityLogging = (req, res, next) => {
     pattern.test(req.url) || pattern.test(requestData)
   );
   
-  if (hasSuspiciousPattern) {
+  if (hasSuspiciousPattern && isDev) {
     console.warn('Suspicious request detected:', {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
       url: req.url,
       method: req.method,
-      body: req.body,
+      body: '[REDACTED in production]',
       timestamp: new Date().toISOString()
     });
   }
@@ -325,8 +327,8 @@ export const securityLogging = (req, res, next) => {
   res.end = function(...args) {
     const responseTime = Date.now() - startTime;
     
-    // Log API key operations
-    if (req.url.includes('/api-keys')) {
+    // Log API key operations (only in development)
+    if (req.url.includes('/api-keys') && isDev) {
       console.log('API Key Operation:', {
         method: req.method,
         url: req.url,

@@ -238,29 +238,24 @@ async function findExternalKeys(userId) {
 }
 
 async function decryptApiKey(apiKeyDoc) {
-  if (apiKeyDoc.externalKeyEncrypted && apiKeyDoc.encryptionIV) {
-    try {
-      return ApiKey.decryptExternalKey({
-        encrypted: apiKeyDoc.externalKeyEncrypted,
-        iv: apiKeyDoc.encryptionIV,
-        tag: apiKeyDoc.encryptionTag,
-      });
-    } catch (error) {
-      console.error("❌ Failed to decrypt API key:", error.message);
-      // Fallback to direct key field if it looks valid
-      if (
-        apiKeyDoc.key &&
-        typeof apiKeyDoc.key === "string" &&
-        apiKeyDoc.key.length > 10
-      ) {
-        console.log("🔄 Attempting fallback to direct key field");
-        return apiKeyDoc.key;
-      }
-      return null;
-    }
+  // All API keys (internal and external) should now be encrypted
+  // If encryption fields are missing, the key cannot be decrypted
+  if (!apiKeyDoc.externalKeyEncrypted || !apiKeyDoc.encryptionIV || !apiKeyDoc.encryptionTag) {
+    console.error("❌ API key is not encrypted - missing encryption fields");
+    return null;
   }
 
-  return apiKeyDoc.key;
+  try {
+    return ApiKey.decryptExternalKey({
+      encrypted: apiKeyDoc.externalKeyEncrypted,
+      iv: apiKeyDoc.encryptionIV,
+      tag: apiKeyDoc.encryptionTag,
+    });
+  } catch (error) {
+    console.error("❌ Failed to decrypt API key:", error.message);
+    // Do NOT fall back to plain key field - all keys must be encrypted
+    return null;
+  }
 }
 
 // ============================================================
