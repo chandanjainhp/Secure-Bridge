@@ -113,7 +113,7 @@ import fheRouter from "./routes/fhe.router.js";
 import chatRouter from "./routes/chat.router.js";
 import aiRouter from "./routes/ai.router.js";
 import projectRouter from "./routes/project.router.js";
-import apiKeyRouter from "./routes/apiKey.router.js";
+import apiKeyRouter from "./routes/apikey.router.js";
 import usageRouter from "./routes/usage.router.js";
 import mongoose from "mongoose";
 

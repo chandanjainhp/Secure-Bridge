@@ -12,7 +12,7 @@ import {
   resendVerificationEmail,
   resetPassword,
   uploadAvatar,
-} from "../controllers/use.controller.js";
+} from "../controllers/user.controller.js";
 import { validate } from "../middlewares/validate.js";
 import {
   registerUserSchema,

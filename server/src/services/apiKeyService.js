@@ -137,10 +137,20 @@ class ApiKeyService {
         // ============================================================
 
         const keyGeneration = ApiKey.generateKey();
+        
+        // Encrypt the internal key for storage
+        const encryptionResult = ApiKey.encryptExternalKey(keyGeneration.key);
+        
         apiKeyData = {
           ...apiKeyData,
           ...keyGeneration,
           isExternal: false,
+          // Store encrypted key instead of plain key
+          externalKeyEncrypted: encryptionResult.encrypted,
+          encryptionIV: encryptionResult.iv,
+          encryptionTag: encryptionResult.tag,
+          // Store masked key for display
+          key: ApiKeyService._maskExternalKey(keyGeneration.key, 'internal'),
         };
       }
 
@@ -157,12 +167,13 @@ class ApiKeyService {
       delete response.externalKeyEncrypted;
       delete response.encryptionIV;
       delete response.encryptionTag;
+      delete response.key;
 
-      // For internal keys, include the actual key only once at creation
-      if (!apiKey.isExternal) {
-        response.key = apiKeyData.key;
+      // For external keys, include the masked key
+      if (apiKey.isExternal) {
+        const maskedKey = ApiKeyService._maskExternalKey(apiKeyData.externalKey || apiKey.key, apiKey.externalProvider);
+        response.maskedKey = maskedKey;
       }
-      // For external keys, the masked key is already in apiKey.key
 
       return response;
     } catch (error) {
@@ -207,7 +218,7 @@ class ApiKeyService {
       const skip = (page - 1) * limit;
       const [apiKeys, total] = await Promise.all([
         ApiKey.find(filter)
-          .select("-hashedKey -externalKeyEncrypted -encryptionIV -encryptionTag")
+          .select("-hashedKey -externalKeyEncrypted -encryptionIV -encryptionTag -key")
           .sort(sort)
           .skip(skip)
           .limit(limit)
@@ -247,7 +258,7 @@ class ApiKeyService {
       const apiKey = await ApiKey.findOne({
         _id: keyId,
         userId,
-      }).select("-hashedKey -externalKeyEncrypted -encryptionIV -encryptionTag");
+      }).select("-hashedKey -externalKeyEncrypted -encryptionIV -encryptionTag -key");
 
       if (!apiKey) {
         throw new ApiError(404, "API key not found");
@@ -346,10 +357,17 @@ class ApiKeyService {
       }
 
       const keyGeneration = ApiKey.generateKey();
+      
+      // Encrypt the new key
+      const encryptionResult = ApiKey.encryptExternalKey(keyGeneration.key);
 
-      apiKey.key = keyGeneration.key;
+      // Store masked key for display, encrypted key for security
+      apiKey.key = ApiKeyService._maskExternalKey(keyGeneration.key, 'internal');
       apiKey.keyPrefix = keyGeneration.keyPrefix;
       apiKey.hashedKey = keyGeneration.hashedKey;
+      apiKey.externalKeyEncrypted = encryptionResult.encrypted;
+      apiKey.encryptionIV = encryptionResult.iv;
+      apiKey.encryptionTag = encryptionResult.tag;
       apiKey.lastRegeneratedAt = new Date();
       apiKey.status = "active";
 
@@ -358,8 +376,8 @@ class ApiKeyService {
       await apiKey.save();
 
       const response = apiKey.toObject();
-      response.key = keyGeneration.key; // Include new key once
       delete response.hashedKey;
+      delete response.key;
 
       return response;
     } catch (error) {
@@ -480,12 +498,16 @@ class ApiKeyService {
       const apiKey = await ApiKey.findOne({
         _id: keyId,
         userId,
-        isExternal: true,
         status: "active",
       });
 
       if (!apiKey) {
-        throw new ApiError(404, "External API key not found");
+        throw new ApiError(404, "API key not found");
+      }
+
+      // Both internal and external keys are now encrypted
+      if (!apiKey.externalKeyEncrypted) {
+        throw new ApiError(400, "API key is not encrypted");
       }
 
       const originalKey = ApiKey.decryptExternalKey({

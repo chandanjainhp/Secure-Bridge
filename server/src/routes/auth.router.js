@@ -6,7 +6,7 @@ import {
   refreshAccessToken,
   logoutUser,
   getCurrentUser,
-} from "../controllers/use.controller.js";
+} from "../controllers/user.controller.js";
 import { validate } from "../middlewares/validate.js";
 import { verifyJWT } from "../middlewares/auth.middle.js";
 import {
