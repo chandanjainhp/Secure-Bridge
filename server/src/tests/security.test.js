@@ -31,7 +31,7 @@ describe('Security Tests - Phase 1', () => {
       });
     
     authToken = res.body.data.accessToken;
-  });
+  }, 30000);
 
   afterAll(async () => {
     await User.deleteMany({});
@@ -239,7 +239,7 @@ describe('Encryption Service Tests', () => {
     beforeAll(() => {
       // Use mock mode for testing
       process.env.ENCRYPTION_MODE = 'mock';
-      encryptionService = EncryptionService;
+      encryptionService = new EncryptionService();
     });
 
     afterAll(() => {
@@ -259,8 +259,9 @@ describe('Encryption Service Tests', () => {
     });
 
     it('should encrypt and decrypt data correctly in AEAD mode', async () => {
-      // Set a test encryption key
-      const testKey = Buffer.from('test-encryption-key-32-bytes-long-1234567890').toString('base64');
+      // Set a test encryption key - must be exactly 32 bytes when base64 decoded
+      // Generate a proper 32-byte key (256-bit)
+      const testKey = Buffer.from('1234567890abcdef1234567890abcdef', 'utf-8').toString('base64');
       process.env.ENCRYPTION_KEY = testKey;
       process.env.ENCRYPTION_MODE = 'aead';
       

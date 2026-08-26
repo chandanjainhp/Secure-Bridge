@@ -13,10 +13,11 @@ let mongod;
 
 beforeAll(async () => {
   const { MongoMemoryServer } = await import('mongodb-memory-server');
-  mongod = await MongoMemoryServer.create();
-  const uri = mongod.getUri();
   const { mongoose } = await import('mongoose');
-  await mongoose.connect(uri);
+  
+  // Use MongoMemoryServer for tests
+  mongod = await MongoMemoryServer.create();
+  await mongoose.connect(mongod.getUri());
 });
 
 afterAll(async () => {

@@ -1,9 +1,8 @@
 import request from 'supertest';
 import { app } from '../app.js';
 import { User } from '../models/user.model.js';
-import UserApiKey from '../features/api-key/models/userApiKey.model.js';
+import { ApiKey } from '../models/apikey.model.js';
 import jwt from 'jsonwebtoken';
-import { jest } from '@jest/globals';
 
 jest.mock('axios', () => ({
   get: jest.fn(() => Promise.resolve({ status: 200, data: { data: [] } })),
@@ -15,7 +14,7 @@ describe('API Key API', () => {
 
   beforeAll(async () => {
     await User.deleteMany({});
-    await UserApiKey.deleteMany({});
+    await ApiKey.deleteMany({});
 
     const user = await User.create({
       fullName: 'API Key Test',
@@ -30,7 +29,7 @@ describe('API Key API', () => {
 
   afterAll(async () => {
     await User.deleteMany({});
-    await UserApiKey.deleteMany({});
+    await ApiKey.deleteMany({});
   });
 
   it('should save an API key', async () => {
