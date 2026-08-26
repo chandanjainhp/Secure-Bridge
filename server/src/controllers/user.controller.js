@@ -190,21 +190,12 @@ const login = asyncHandler(async (req, res) => {
     3600,
   );
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000,
-  };
-
   return res
     .status(200)
-    .cookie("accessToken", accessToken, options)
-    .cookie("refreshToken", refreshToken, options)
     .json(
       new ApiResponse(
         200,
-        { user: loggedInUser },
+        { user: loggedInUser, accessToken, refreshToken },
         "User logged in successfully",
       ),
     );
@@ -221,16 +212,8 @@ const logoutUser = asyncHandler(async (req, res) => {
     { new: true },
   );
 
-  const options = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-  };
-
   return res
     .status(200)
-    .clearCookie("accessToken", options)
-    .clearCookie("refreshToken", options)
     .json(new ApiResponse(200, {}, "User logged out successfully"));
 });
 
@@ -238,8 +221,10 @@ const logoutUser = asyncHandler(async (req, res) => {
 // REFRESH ACCESS TOKEN
 // ============================================================
 const refreshAccessToken = asyncHandler(async (req, res) => {
+  // Token can come from Authorization header or request body
   const incomingRefreshToken =
-    req.cookies.refreshToken || req.body.refreshToken;
+    req.body.refreshToken || 
+    req.header("Authorization")?.replace("Bearer ", "");
 
   if (!incomingRefreshToken) {
     throw new ApiError(401, "Unauthorized request");
@@ -275,20 +260,12 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     const { accessToken, refreshToken: newRefreshToken } =
       await generateAccessAndRefreshTokens(user._id);
 
-    const options = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-    };
-
     return res
       .status(200)
-      .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", newRefreshToken, options)
       .json(
         new ApiResponse(
           200,
-          {},
+          { accessToken, refreshToken: newRefreshToken },
           "Access token refreshed successfully",
         ),
       );
