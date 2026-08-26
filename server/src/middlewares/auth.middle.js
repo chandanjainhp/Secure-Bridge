@@ -10,13 +10,11 @@ import { User } from "../models/user.model.js"; // Import User model
 // It runs before protected routes to ensure only authenticated users can access them
 export const verifyJWT = asyncHandler(async (req, _res, next) => {
     try {
-        // STEP 1: Extract token from cookies or Authorization header
-        // Check two possible locations for the JWT token:
-        // 1. req.cookies.accessToken - for web browsers that store tokens in cookies
-        // 2. req.header("Authorization") - for mobile apps/APIs that send tokens in headers
+        // STEP 1: Extract token from Authorization header
+        // Tokens are sent in the Authorization header as Bearer tokens
+        // Format: "Authorization: Bearer <token>"
         
-        const token = req.cookies?.accessToken || 
-                     req.header("Authorization")?.replace("Bearer ", "");
+        const token = req.header("Authorization")?.replace("Bearer ", "");
 
         // STEP 2: Check if token exists
         // If no token is found in either location, user is not authenticated

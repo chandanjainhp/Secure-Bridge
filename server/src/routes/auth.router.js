@@ -167,19 +167,10 @@ asyncHandler(async (req, res) => {
 
     const loggedInUser = await User.findById(user._id).select("-password -refreshToken");
 
-    const options = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 24 * 60 * 60 * 1000,
-    };
-
     return res
       .status(200)
-      .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", refreshToken, options)
       .json(
-        new ApiResponse(200, { user: loggedInUser }, "OTP verified successfully")
+        new ApiResponse(200, { user: loggedInUser, accessToken, refreshToken }, "OTP verified successfully")
       );
   })
 );
