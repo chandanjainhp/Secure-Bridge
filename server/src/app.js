@@ -7,7 +7,8 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 
 // Security headers middleware
-import helmet from "helmet";
+import dotenv from "dotenv";
+dotenv.config({ path: new URL("../.env", import.meta.url) });
 
 // Security middleware collection
 import {
@@ -25,25 +26,7 @@ const app = express();
 // ------------------------------------------------------------
 //  Security headers
 // ------------------------------------------------------------
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: [
-          "'self'",
-          'https://api.openai.com',
-          'https://api.anthropic.com',
-          'https://generativelanguage.googleapis.com',
-        ],
-      },
-    },
-    crossOriginEmbedderPolicy: false,
-  })
-);
+app.use(securityMiddleware.helmet);
 
 // ------------------------------------------------------------
 //  Additional security middleware
@@ -54,23 +37,27 @@ app.use(securityHeaders);
 app.use(securityLogging);
 
 app.use('/api/', rateLimiters.general);
-app.use('/api/auth/', rateLimiters.auth);
-app.use('/api/auth/', slowDownMiddleware.auth);
-app.use('/api/api-key/', rateLimiters.createApiKey);
-app.use('/api/api-key/', rateLimiters.testApiKey);
+app.use('/api/v1/auth/', rateLimiters.auth);
+app.use('/api/v1/auth/', slowDownMiddleware.auth);
+app.use('/api/v1/api-key/', rateLimiters.createApiKey);
+app.use('/api/v1/api-key/', rateLimiters.testApiKey);
 app.use('/api/', slowDownMiddleware.general);
 
 // ------------------------------------------------------------
 //  CORS configuration
 // ------------------------------------------------------------
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
-      : ["http://localhost:5173", "http://127.0.0.1:5173"],
-    credentials: true, // allow cookies and auth headers
-  }),
-);
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use((req, res, next) => {
+  const origin = req.get("Origin");
+  if (!origin || allowedOrigins.includes(origin)) return next();
+  return res.status(403).json({ success: false, statusCode: 403, message: "Origin is not allowed" });
+});
+
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 // ------------------------------------------------------------
 //  Body parsing middleware
@@ -99,14 +86,12 @@ app.use(cookieParser());
 // ------------------------------------------------------------
 //  Route imports
 // ------------------------------------------------------------
-import userRouter from "./routes/user.router.js";
-import authRouter from "./routes/auth.router.js";
+import authRouter from "./features/auth/routes/auth.router.js";
 import fheRouter from "./routes/fhe.router.js";
-import chatRouter from "./routes/chat.router.js";
-import aiRouter from "./routes/ai.router.js";
-import projectRouter from "./routes/project.router.js";
-import apiKeyRouter from "./routes/apikey.router.js";
-import usageRouter from "./routes/usage.router.js";
+import chatRouter from "./features/chat/routes/chat.router.js";
+import projectRouter from "./features/projects/routes/project.router.js";
+import apiKeyRouter from "./features/api-key/routes/apiKey.router.js";
+import usageRouter from "./features/usage/routes/usageRoutes.js";
 import mongoose from "mongoose";
 
 // ------------------------------------------------------------
@@ -154,9 +139,9 @@ app.get("/health/mongodb", async (req, res) => {
 app.get("/health/llm", async (req, res) => {
   try {
     const LLM_SERVER_URL =
-      process.env.VITE_LOCAL_LLM_URL || "http://localhost:1234";
+      process.env.LLM_SERVER_URL || "http://localhost:1234/v1";
 
-    const response = await fetch(`${LLM_SERVER_URL}/v1/models`, {
+    const response = await fetch(`${LLM_SERVER_URL.replace(/\/$/, "")}/models`, {
       method: "GET",
       signal: AbortSignal.timeout(5000),
     });
@@ -183,7 +168,7 @@ app.get("/health/llm", async (req, res) => {
     }
   } catch (error) {
     const LLM_SERVER_URL =
-      process.env.VITE_LOCAL_LLM_URL || "http://localhost:1234";
+      process.env.LLM_SERVER_URL || "http://localhost:1234/v1";
     res.status(503).json({
       service: "llm_server",
       status: "error",
@@ -204,8 +189,8 @@ app.get("/health", async (req, res) => {
     let llmError = null;
     try {
       const LLM_SERVER_URL =
-        process.env.VITE_LOCAL_LLM_URL || "http://localhost:1234";
-      const response = await fetch(`${LLM_SERVER_URL}/v1/models`, {
+        process.env.LLM_SERVER_URL || "http://localhost:1234/v1";
+      const response = await fetch(`${LLM_SERVER_URL.replace(/\/$/, "")}/models`, {
         method: "GET",
         signal: AbortSignal.timeout(5000),
       });
@@ -214,7 +199,7 @@ app.get("/health", async (req, res) => {
       llmError = error.message;
     }
 
-    const overallHealthy = mongoHealthy && llmHealthy;
+    const overallHealthy = mongoHealthy;
 
     res.status(overallHealthy ? 200 : 503).json({
       status: overallHealthy ? "healthy" : "degraded",
@@ -246,8 +231,8 @@ app.get("/health", async (req, res) => {
 // ------------------------------------------------------------
 app.get("/", (req, res) => {
   const baseEndpoints = {
-    register: "/api/v1/users/register",
-    login: "/api/v1/users/login",
+    register: "/api/v1/auth/register",
+    login: "/api/v1/auth/login",
     health: "/health",
     mongodb_health: "/health/mongodb",
     llm_health: "/health/llm",
@@ -261,8 +246,6 @@ app.get("/", (req, res) => {
     process.env.NODE_ENV === "development"
       ? {
           ...baseEndpoints,
-          create_test_user: "/api/v1/users/create-test-user",
-          verify_user: "/api/v1/users/verify-user/:email",
         }
       : baseEndpoints;
 
@@ -271,16 +254,10 @@ app.get("/", (req, res) => {
     environment: process.env.NODE_ENV || "production",
     endpoints,
     cors_enabled: true,
-    allowed_origins: [
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-    ],
+    allowed_origins: allowedOrigins,
     ...(process.env.NODE_ENV === "development" && {
       development_notes: {
         email_verification: "Bypassed in development mode",
-        test_user:
-          "Use POST /api/v1/users/create-test-user to create test user",
         test_credentials: "email: test@example.com, password: password123",
       },
     }),
@@ -290,11 +267,9 @@ app.get("/", (req, res) => {
 // ------------------------------------------------------------
 //  Mount API routers
 // ------------------------------------------------------------
-app.use("/api/v1/users", userRouter);
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/fhe", fheRouter);
 app.use("/api/v1/chat", chatRouter);
-app.use("/api/v1/ai", aiRouter);
 app.use("/api/v1/projects", projectRouter);
 app.use("/api/v1/api-key", apiKeyRouter);
 app.use("/api/v1/usage", usageRouter);
@@ -303,22 +278,36 @@ app.use("/api/v1/usage", usageRouter);
 //  Global error handling middleware (must be last)
 // ------------------------------------------------------------
 app.use((err, req, res, next) => {
+  if (err?.name === "MulterError") {
+    err.statusCode = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+    err.message = err.code === "LIMIT_FILE_SIZE" ? "Uploaded file is too large" : "Invalid file upload";
+  }
   let statusCode = err.statusCode || 500;
   let message = err.message || "Internal Server Error";
 
-  console.error("API Error:", {
+  if (err?.name === "ValidationError") {
+    statusCode = 400;
+    message = "Request validation failed";
+  } else if (err?.name === "CastError") {
+    statusCode = 400;
+    message = "Invalid resource identifier";
+  } else if (err?.code === 11000) {
+    statusCode = 409;
+    message = "A resource with the same unique value already exists";
+  }
+
+  console.error("API Error", {
     statusCode,
-    message,
-    stack: err.stack,
-    url: req.url,
+    name: err?.name,
     method: req.method,
+    url: req.originalUrl,
   });
 
   return res.status(statusCode).json({
     success: false,
     statusCode,
     message,
-    errors: err.errors || [],
+    errors: Array.isArray(err?.errors) ? err.errors : [],
     ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
   });
 });

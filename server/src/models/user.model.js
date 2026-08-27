@@ -3,11 +3,10 @@
 
 // Import 'watch' from Node.js 'fs' module - used for file system operations
 // NOTE: This import seems unused in current code and can be removed
-import { watch } from "fs";
-
 // Import Mongoose ODM (Object Document Mapper) for MongoDB
 // Schema is imported separately for creating database schemas
 import mongoose, {Schema} from "mongoose";
+import crypto from "node:crypto";
 
 // Import jsonwebtoken library for creating and verifying JWT tokens
 // Used for authentication and authorization
@@ -23,7 +22,7 @@ import bcrypt from "bcryptjs";
 
 // Create a new Mongoose schema for User collection
 const userSchema = new Schema({
-    
+
     // USERNAME FIELD
     // ==============
     username : {
@@ -34,7 +33,7 @@ const userSchema = new Schema({
         trim: true,                      // Removes whitespace from beginning/end
         index: true                      // Creates database index for faster queries
     },
-    
+
     // EMAIL FIELD
     // ===========
     email: {
@@ -44,9 +43,11 @@ const userSchema = new Schema({
         lowercase: true,                 // Automatically converts to lowercase
         index: true,                     // Creates database index for faster queries
     },
-    
+
     // FULL NAME FIELD
     // ===============
+    avatarUrl: { type: String, default: null },
+
     fullName: {
         type: String,                    // Data type: String
         required: true,                  // Field is mandatory
@@ -54,7 +55,7 @@ const userSchema = new Schema({
         index: true,                     // Creates database index for faster queries
     },
 
-    
+
     // PASSWORD FIELD
     // ==============
     password: {
@@ -62,22 +63,22 @@ const userSchema = new Schema({
         required: [true, 'Password is required'] // Required with custom error message
         // Password will be hashed before saving (see pre-save middleware below)
     },
-    
+
     // EMAIL VERIFICATION FIELDS
     // =========================
     isVerified: {
         type: Boolean,
         default: false                   // User starts as unverified
     },
-    
+
     verificationToken: {
         type: String                     // Stores the verification code/token
     },
-    
+
     verificationTokenExpires: {
         type: Date                       // When the verification token expires
     },
-    
+
     // REFRESH TOKEN FIELD
     // ===================
     refreshToken: {                      // Fixed typo: was 'RefershToken'
@@ -85,14 +86,14 @@ const userSchema = new Schema({
         // Used to store JWT refresh tokens for maintaining user sessions
         // Not required as it's only set when user logs in
     },
-    
+
     // ADMIN ROLE FIELD
     // ================
     isAdmin: {
         type: Boolean,
         default: false                   // Users are not admin by default
     },
-    
+
     // ADMIN LEVEL FIELD (for different admin privileges)
     // ==================================================
     adminLevel: {
@@ -100,7 +101,7 @@ const userSchema = new Schema({
         enum: ['super', 'moderator', 'support'],
         default: undefined               // Only set for admin users
     },
-    
+
     // ADMIN CREATED BY
     // ================
     createdBy: {
@@ -108,7 +109,7 @@ const userSchema = new Schema({
         ref: 'User',                     // Reference to admin who created this user
         default: null
     }
-    
+
 }, {
     // SCHEMA OPTIONS
     // ==============
@@ -129,7 +130,7 @@ userSchema.pre("save", async function (next) {
     // Hash the password using bcrypt with salt rounds of 12
     // Higher salt rounds = more secure but slower processing
     this.password = await bcrypt.hash(this.password, 12);
-    
+
     // Call next() to proceed to the next middleware or save operation
     next();
 });
@@ -161,7 +162,7 @@ userSchema.methods.generateAccessToken = function(extendedSession = false) {
             isAdmin: this.isAdmin,
             adminLevel: this.adminLevel
         },
-        process.env.JWT_SECRET || process.env.ACCESS_TOKEN_SECRET,
+        process.env.JWT_SECRET,
         {
             expiresIn: expiryTime
         }
@@ -176,8 +177,9 @@ userSchema.methods.generateRefreshToken = function(extendedSession = false) {
     return jwt.sign(
         {
             _id: this._id,
+            extendedSession,
         },
-        process.env.JWT_REFRESH_SECRET || process.env.REFRESH_TOKEN_SECRET,
+        process.env.JWT_REFRESH_SECRET,
         {
             expiresIn: expiryTime
         }
@@ -189,12 +191,12 @@ userSchema.methods.generateRefreshToken = function(extendedSession = false) {
 // Creates a 6-digit verification code for email verification
 userSchema.methods.generateVerificationToken = function() {
     // Generate a 6-digit random number
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    
+    const verificationCode = crypto.randomInt(100000, 1000000).toString();
+
     // Set the verification token and expiration (15 minutes from now)
     this.verificationToken = verificationCode;
     this.verificationTokenExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-    
+
     return verificationCode;
 }
 

@@ -7,6 +7,7 @@ import { DB_NAME } from "../constants.js";
 const connectDB = async () => {
     try {
         let uri = process.env.MONGODB_URI;
+        if (!uri) throw new Error("MONGODB_URI is required");
         if (DB_NAME && !uri.includes(`/${DB_NAME}`)) {
             const [base, ...queryParts] = uri.split('?');
             uri = `${base}/${DB_NAME}${queryParts.length ? '?' + queryParts.join('?') : ''}`;

@@ -207,7 +207,7 @@ class FHEController {
             dataEncrypted: true,
             homomorphicProcessing: true,
             privacyPreserved: true,
-            serverNeverSawPlaintext: true,
+            serverNeverSawPlaintext: false,
           },
           timestamp: new Date().toISOString(),
         },

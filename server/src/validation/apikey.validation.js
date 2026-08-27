@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { z } from "zod";
 
 
@@ -5,6 +6,7 @@ const providerEnum = z.enum([
   "openai",
   "anthropic",
   "google",
+  "google_ai_studio",
   "azure",
   "cohere",
   "huggingface",
@@ -54,13 +56,19 @@ export const createApiKeySchema = z.object({
       .optional()
       .default(""),
     permissions: z
-      .array(z.string().trim().min(1))
+      .array(z.enum([
+        "chat.access", "chat.completions", "chat.streaming",
+        "fhe.encrypt", "fhe.decrypt", "fhe.compute", "fhe.ai_chat",
+        "mcp.connect", "mcp.tools", "user.read", "user.write",
+        "admin.read", "admin.write", "analytics.read", "keys.read",
+        "keys.write", "keys.delete",
+      ]))
       .optional()
       .default([]),
     rateLimit: z
       .object({
-        requestsPerMinute: z.number().int().min(1).max(10000).optional(),
-        requestsPerHour: z.number().int().min(1).max(100000).optional(),
+        requestsPerMinute: z.number().int().min(1).max(1000).optional(),
+        requestsPerHour: z.number().int().min(1).max(50000).optional(),
         requestsPerDay: z.number().int().min(1).max(1000000).optional(),
       })
       .optional()
@@ -78,9 +86,15 @@ export const createApiKeySchema = z.object({
           .trim()
           .min(1)
           .refine(
-            (ip) =>
-              /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) ||
-              /^[0-9a-fA-F:]+$/.test(ip),
+            (ip) => {
+              const [address, prefix] = ip.split("/");
+              const version = isIP(address);
+              if (!version) return false;
+              if (prefix === undefined) return true;
+              const max = version === 4 ? 32 : 128;
+              const bits = Number(prefix);
+              return Number.isInteger(bits) && bits >= 0 && bits <= max;
+            },
             "Invalid IP address format"
           )
       )
@@ -124,11 +138,17 @@ export const updateApiKeySchema = z.object({
         .trim()
         .max(500, "Description must be at most 500 characters")
         .optional(),
-      permissions: z.array(z.string().trim().min(1)).optional(),
+      permissions: z.array(z.enum([
+        "chat.access", "chat.completions", "chat.streaming",
+        "fhe.encrypt", "fhe.decrypt", "fhe.compute", "fhe.ai_chat",
+        "mcp.connect", "mcp.tools", "user.read", "user.write",
+        "admin.read", "admin.write", "analytics.read", "keys.read",
+        "keys.write", "keys.delete",
+      ])).optional(),
       rateLimit: z
         .object({
-          requestsPerMinute: z.number().int().min(1).max(10000).optional(),
-          requestsPerHour: z.number().int().min(1).max(100000).optional(),
+          requestsPerMinute: z.number().int().min(1).max(1000).optional(),
+          requestsPerHour: z.number().int().min(1).max(50000).optional(),
           requestsPerDay: z.number().int().min(1).max(1000000).optional(),
         })
         .optional(),
@@ -139,8 +159,15 @@ export const updateApiKeySchema = z.object({
             .trim()
             .min(1)
             .refine(
-              (ip) =>
-                /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) || /^[0-9a-fA-F:]+$/.test(ip),
+              (ip) => {
+                const [address, prefix] = ip.split("/");
+                const version = isIP(address);
+                if (!version) return false;
+                if (prefix === undefined) return true;
+                const max = version === 4 ? 32 : 128;
+                const bits = Number(prefix);
+                return Number.isInteger(bits) && bits >= 0 && bits <= max;
+              },
               "Invalid IP address format"
             )
         )
@@ -234,11 +261,17 @@ export const bulkUpdateApiKeysSchema = z.object({
       .object({
         name: z.string().trim().min(1).max(100).optional(),
         description: z.string().trim().max(500).optional(),
-        permissions: z.array(z.string().trim().min(1)).optional(),
+        permissions: z.array(z.enum([
+        "chat.access", "chat.completions", "chat.streaming",
+        "fhe.encrypt", "fhe.decrypt", "fhe.compute", "fhe.ai_chat",
+        "mcp.connect", "mcp.tools", "user.read", "user.write",
+        "admin.read", "admin.write", "analytics.read", "keys.read",
+        "keys.write", "keys.delete",
+      ])).optional(),
         rateLimit: z
           .object({
-            requestsPerMinute: z.number().int().min(1).max(10000).optional(),
-            requestsPerHour: z.number().int().min(1).max(100000).optional(),
+            requestsPerMinute: z.number().int().min(1).max(1000).optional(),
+            requestsPerHour: z.number().int().min(1).max(50000).optional(),
             requestsPerDay: z.number().int().min(1).max(1000000).optional(),
           })
           .optional(),

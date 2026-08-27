@@ -10,14 +10,13 @@ const userUsageSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
-  freeMessagesUsed: {
-    type: Number,
-    required: true,
-    default: 0,
-  },
+  freeMessagesUsed: { type: Number, required: true, default: 0, min: 0 },
+  promptTokens: { type: Number, default: 0, min: 0 },
+  completionTokens: { type: Number, default: 0, min: 0 },
+  totalTokens: { type: Number, default: 0, min: 0 },
   resetAt: {
     type: Date,
-    allowNull: true, // Nullable for monthly reset, but we won't use it for now (just tracking total)
+    default: null,
   },
 }, {
   timestamps: true,
@@ -40,7 +39,7 @@ const userUsageSchema = new mongoose.Schema({
 });
 
 // Index for faster lookups by userId
-userUsageSchema.index({ userId: 1 });
+userUsageSchema.index({ userId: 1 }, { unique: true });
 
 const UserUsage = mongoose.model('UserUsage', userUsageSchema);
 

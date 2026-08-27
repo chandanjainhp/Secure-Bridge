@@ -74,26 +74,24 @@ router.post(
   asyncHandler(async (req, res) => {
     const { email, mode } = req.body;
 
-    console.log('🔍 [send-otp] Request:', { email, mode });
-
     if (mode === 'reset_password') {
       const user = await User.findOne({ email });
       if (!user) {
         throw new ApiError(404, 'No account found with this email');
       }
-    } else {
+    } else if (mode === 'register') {
+      // For registration, block already-verified users
       const existingUser = await User.findOne({ email });
       if (existingUser && existingUser.isVerified) {
         throw new ApiError(400, "Email is already registered and verified");
       }
     }
+    // For 'login' mode: allow both verified and unverified users to receive OTP
 
     await checkRateLimit(`otp:send:${req.ip}`, 5, 60);
     const otp = generateOtp();
     const purpose = mode === 'reset_password' ? 'reset' : mode === 'register' ? 'register' : 'login';
     await redisService.setVerificationCode(email, otp, 900, purpose);
-
-    console.log('🔍 [send-otp] Stored OTP for:', { email, purpose });
 
     if (mode === 'reset_password') {
       await sendPasswordResetEmail(email, otp);
@@ -120,6 +118,10 @@ asyncHandler(async (req, res) => {
      if (!stored || stored !== otp) {
        throw new ApiError(400, "Invalid or expired OTP");
      }
+
+    // Delete the OTP from Redis immediately after successful verification
+    // to prevent replay attacks
+    await redisService.deleteVerificationCode(email, purpose);
 
     let user = await User.findOne({ email });
 
@@ -190,13 +192,14 @@ router.post(
       if (!existingUser) {
         throw new ApiError(404, 'No account found with this email');
       }
-    } else {
-      // For login/register modes, user may or may not exist
+    } else if (mode === 'register') {
+      // For registration, block already-verified users
       const existingUser = await User.findOne({ email });
       if (existingUser && existingUser.isVerified) {
         throw new ApiError(400, "Email is already registered and verified");
       }
     }
+    // For 'login' mode: allow any user to receive OTP
 
     await checkRateLimit(`otp:resend:${req.ip}`, 5, 60);
     const otp = generateOtp();

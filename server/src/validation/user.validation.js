@@ -124,13 +124,6 @@ export const verifyOtpSchema = z.object({
     password: z.string().optional(),
     mode: z.enum(['login', 'register', 'reset_password']).optional().default('login'),
   }).superRefine((data, ctx) => {
-    if (data.mode === 'register' && !data.password) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Password is required for registration',
-        path: ['password'],
-      });
-    }
     if (data.mode === 'register' && data.password && data.password.length < 6) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -145,7 +138,7 @@ export const verifyOtpSchema = z.object({
 export const resendOtpSchema = z.object({
   body: z.object({
     email: emailSchema,
-    mode: z.enum(['login', 'reset_password']).optional().default('login'),
+    mode: z.enum(['login', 'register', 'reset_password']).optional().default('login'),
   }),
 });
 

@@ -10,7 +10,7 @@
  *   npm install ai @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google
  */
 
-import { ApiKey } from "../models/apikey.model.js";
+import { ApiKey } from "../features/api-key/models/apikey.model.js";
 
 const loadOpenAI = () => import("@ai-sdk/openai").then(({ createOpenAI }) => createOpenAI);
 const loadAnthropic = () => import("@ai-sdk/anthropic").then(({ createAnthropic }) => createAnthropic);

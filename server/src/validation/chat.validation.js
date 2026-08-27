@@ -34,6 +34,7 @@ export const completionsSchema = z.object({
       .min(1, "Model is required")
       .max(100, "Model name too long")
       .optional(),
+    systemPrompt: z.string().trim().max(4000).optional(),
     messages: z
       .array(messageSchema)
       .min(1, "At least one message is required")

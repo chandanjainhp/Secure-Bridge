@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import crypto from "crypto";
+import { encryptApiKey, decryptApiKey } from "../services/apiKeyEncryption.js";
 
 // Subdocument schemas with suppressReservedKeysWarning
 const endpointUsageSchema = new Schema({
@@ -258,6 +259,16 @@ const apiKeySchema = new Schema(
   {
     timestamps: true,
     suppressReservedKeysWarning: true, // Suppress warning for 'errors' field
+    toJSON: {
+      transform: function(doc, ret) {
+        // Always strip encrypted fields from JSON responses
+        delete ret.hashedKey;
+        delete ret.externalKeyEncrypted;
+        delete ret.encryptionIV;
+        delete ret.encryptionTag;
+        return ret;
+      }
+    },
     // Add text index for search functionality
     indexes: [
       { name: 'text', description: 'text' }
@@ -352,41 +363,11 @@ apiKeySchema.statics.validateExternalKeyFormat = function(apiKey, provider) {
 
 // Encryption utilities for external API keys
 apiKeySchema.statics.encryptExternalKey = function(plainKey) {
-  const algorithm = 'aes-256-gcm';
-  const key = crypto.scryptSync(process.env.ENCRYPTION_KEY || 'fallback-key', 'salt', 32);
-  const iv = crypto.randomBytes(16);
-  
-  const cipher = crypto.createCipheriv(algorithm, key, iv);
-  
-  let encrypted = cipher.update(plainKey, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  
-  const tag = cipher.getAuthTag();
-  
-  return {
-    encrypted,
-    iv: iv.toString('hex'),
-    tag: tag.toString('hex')
-  };
+  return encryptApiKey(plainKey);
 };
 
 apiKeySchema.statics.decryptExternalKey = function(encryptedData) {
-  try {
-    const algorithm = 'aes-256-gcm';
-    const key = crypto.scryptSync(process.env.ENCRYPTION_KEY || 'fallback-key', 'salt', 32);
-    const iv = Buffer.from(encryptedData.iv, 'hex');
-    const tag = Buffer.from(encryptedData.tag, 'hex');
-    
-    const decipher = crypto.createDecipheriv(algorithm, key, iv);
-    decipher.setAuthTag(tag);
-    
-    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    
-    return decrypted;
-  } catch (error) {
-    throw new Error('Failed to decrypt API key');
-  }
+  return decryptApiKey(encryptedData);
 };
 
 // Enhanced Instance Methods

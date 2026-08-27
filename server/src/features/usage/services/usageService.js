@@ -1,46 +1,34 @@
 import UserUsage from '../models/userUsage.model.js';
 
+const FREE_MESSAGE_LIMIT = Number(process.env.FREE_MESSAGE_LIMIT || 10);
 const usageService = {
-  // Get the user's usage record, create if not exists
   async getUsage(userId) {
-    let usage = await UserUsage.findOne({ userId });
-    if (!usage) {
-      usage = await UserUsage.create({
-        userId,
-        freeMessagesUsed: 0,
-      });
+    return UserUsage.findOneAndUpdate(
+      { userId },
+      { $setOnInsert: { userId, freeMessagesUsed: 0 } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+  },
+  async consumeFreeMessage(userId) {
+    const usage = await this.getUsage(userId);
+    const updated = await UserUsage.findOneAndUpdate(
+      { userId, freeMessagesUsed: { $lt: FREE_MESSAGE_LIMIT } },
+      { $inc: { freeMessagesUsed: 1 } },
+      { new: true },
+    );
+    if (!updated) {
+      const error = new Error('Free message limit reached. Add a BYOK API key for continued chat.');
+      error.statusCode = 429;
+      error.data = { used: usage.freeMessagesUsed, remaining: 0, limit: FREE_MESSAGE_LIMIT };
+      throw error;
     }
-    return usage;
+    return updated;
   },
-
-  // Increment the free message count by 1
-  async incrementUsage(userId) {
-    const usage = await this.getUsage(userId);
-    usage.freeMessagesUsed += 1;
-    await usage.save();
-    return usage;
+  async recordTokens(userId, usage = {}) {
+    return UserUsage.findOneAndUpdate({ userId }, { $inc: { promptTokens: usage.promptTokens || 0, completionTokens: usage.completionTokens || 0, totalTokens: usage.totalTokens || 0 } }, { new: true, upsert: true, setDefaultsOnInsert: true });
   },
-
-  // Reset the free message count (for monthly reset, if needed)
-  async resetUsage(userId) {
-    const usage = await this.getUsage(userId);
-    usage.freeMessagesUsed = 0;
-    usage.resetAt = new Date();
-    await usage.save();
-    return usage;
-  },
-
-  // Get the remaining free messages (assuming a limit of 10)
-  getRemainingFreeMessages(userId) {
-    // This is a helper function that can be used without saving
-    return async () => {
-      const usage = await this.getUsage(userId);
-      const limit = 10;
-      const used = usage.freeMessagesUsed;
-      const remaining = Math.max(0, limit - used);
-      return { used, remaining, limit };
-    };
-  },
+  async resetUsage(userId) { return UserUsage.findOneAndUpdate({ userId }, { $set: { freeMessagesUsed: 0, resetAt: new Date() } }, { new: true, upsert: true, setDefaultsOnInsert: true }); },
+  async getRemainingFreeMessages(userId) { const usage = await this.getUsage(userId); return { used: usage.freeMessagesUsed, remaining: Math.max(0, FREE_MESSAGE_LIMIT - usage.freeMessagesUsed), limit: FREE_MESSAGE_LIMIT }; },
 };
-
+export { FREE_MESSAGE_LIMIT };
 export default usageService;

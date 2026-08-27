@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { app } from '../app.js';
 import { User } from '../models/user.model.js';
-import { ApiKey } from '../models/apikey.model.js';
+import { ApiKey } from '../features/api-key/models/apikey.model.js';
 import jwt from 'jsonwebtoken';
 import { jest } from '@jest/globals';
 

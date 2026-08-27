@@ -27,11 +27,6 @@ export const transporter = nodemailer.createTransport({
   logger: process.env.NODE_ENV !== 'production'
 });
 
-// Log email user only in development mode
-if (process.env.NODE_ENV !== 'production') {
-  console.log("Email User:", process.env.EMAIL_USER);
-}
-
 // Default sender information
 export const sender = {
   email: process.env.EMAIL_USER,

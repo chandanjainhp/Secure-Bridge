@@ -2,6 +2,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { Project } from "../models/project.model.js";
+import { generateChatResponse } from "../services/chatService.js";
 
 const getProjects = asyncHandler(async (req, res) => {
   const projects = await Project.find({ owner: req.user._id }).sort({ updatedAt: -1 });
@@ -86,19 +87,68 @@ const sendMessage = asyncHandler(async (req, res) => {
   if (!project) throw new ApiError(404, "Project not found");
   const conversation = (project.conversations || []).find(c => c.id === req.params.conversationId);
   if (!conversation) throw new ApiError(404, "Conversation not found");
-  const message = {
+
+  const userContent = req.body.content;
+  if (!userContent || !userContent.trim()) {
+    throw new ApiError(400, "Message content cannot be empty");
+  }
+
+  // 1. Save the user's message to the conversation
+  const userMessage = {
     id: Date.now().toString(),
-    role: req.body.role || "user",
-    content: req.body.content,
+    role: "user",
+    content: userContent,
     createdAt: new Date(),
   };
   conversation.messages = conversation.messages || [];
-  conversation.messages.push(message);
+  conversation.messages.push(userMessage);
+
+  // Auto-title the conversation from the first message
   if (!conversation.title || conversation.title === "New Chat") {
-    conversation.title = req.body.content.slice(0, 40);
+    conversation.title = userContent.slice(0, 40);
   }
+
+  // 2. Generate the assistant's response via ChatService
+  //    This fetches+decrypts the user's API key (BYOK), applies the project's
+  //    systemPrompt, calls the LLM, and tracks usage.
+  let assistantText;
+  try {
+    const result = await generateChatResponse({
+      userId: req.user._id.toString(),
+      systemPrompt: project.systemPrompt,
+      conversationHistory: conversation.messages.slice(0, -1), // exclude the message we just added
+      userContent,
+      model: project.model,
+      temperature: project.temperature,
+      maxTokens: project.maxTokens,
+    });
+    assistantText = result.text;
+  } catch (llmError) {
+    // Save the user message even if the LLM call fails, so it's not lost
+    await project.save();
+    // If it's a 429 rate-limit error, pass it through with the correct status
+    if (llmError.statusCode === 429) {
+      throw new ApiError(429, llmError.message, llmError.details);
+    }
+    throw new ApiError(502, `Failed to generate response: ${llmError.message}`, {
+      userMessageSaved: true,
+    });
+  }
+
+  // 3. Save the assistant's message to the conversation
+  const assistantMessage = {
+    id: (Date.now() + 1).toString(),
+    role: "assistant",
+    content: assistantText,
+    createdAt: new Date(),
+  };
+  conversation.messages.push(assistantMessage);
   await project.save();
-  return res.status(201).json(new ApiResponse(201, message, "Message sent successfully"));
+
+  // 4. Return both messages as the client expects
+  return res.status(201).json(
+    new ApiResponse(201, { userMessage, assistantMessage }, "Message sent successfully"),
+  );
 });
 
 const uploadFile = asyncHandler(async (req, res) => {

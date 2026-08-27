@@ -333,7 +333,7 @@ class ApiKeyService {
 
       await apiKey.save();
 
-      return apiKey.toObject();
+      return ApiKeyService._sanitizeKeyResponse(apiKey);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(500, "Failed to update API key");
@@ -545,6 +545,10 @@ class ApiKeyService {
     delete response.externalKeyEncrypted;
     delete response.encryptionIV;
     delete response.encryptionTag;
+    // 'key' field stores a masked display value, not plaintext — but we still
+    // strip it by default to avoid confusion. Callers that need the masked key
+    // should construct it explicitly via _maskExternalKey.
+    delete response.key;
     return response;
   }
 

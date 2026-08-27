@@ -4,6 +4,7 @@
 // NEW WAY: ES6 module syntax for importing dotenv package
 // dotenv allows us to load environment variables from a .env file
 import dotenv from "dotenv";
+dotenv.config({ path: new URL("../.env", import.meta.url) });
 
 // Import our Express app configuration from app.js
 // This contains all the middleware setup and route configurations
@@ -18,12 +19,14 @@ import { app } from "./app.js";
 import connectDB from "./db/index.js";
 // Import Redis connection function
 import { connectRedis } from "./config/redis.js";
+import { validateEnvironment } from "./config/env.js";
 
-// Configure dotenv to load environment variables from a specific file
-// This reads variables like MONGODB_URI, PORT, etc. from the .env file
-dotenv.config({
-    path: `./.env` // Path to the environment variables file (should probably be './.env')
-})
+try {
+  validateEnvironment();
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 
 // Call the database connection function and handle the Promise it returns
 // This establishes connection to MongoDB before starting the application

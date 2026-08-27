@@ -1,6 +1,8 @@
-import { ApiKey } from "../models/apikey.model.js";
+import { ApiKey } from "../features/api-key/models/apikey.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import redisService from "../services/redis.service.js";
+import net from "node:net";
 
 // Middleware to verify API key
 export const verifyApiKey = (...requiredPermissions) => {
@@ -25,13 +27,36 @@ export const verifyApiKey = (...requiredPermissions) => {
         throw new ApiError(401, "API key is revoked or inactive");
       }
       
-      // Check rate limits
-      const rateLimitCheck = keyRecord.checkRateLimit();
-      if (!rateLimitCheck.allowed) {
-        throw new ApiError(429, `Rate limit exceeded: ${rateLimitCheck.reason}`, {
-          resetTime: rateLimitCheck.resetTime
+      // Enforce minute, hour, and day limits atomically through Redis.
+      const limits = keyRecord.rateLimit || {};
+      const [minute, hour, day] = await Promise.all([
+        redisService.incrementRateLimit(`apikey:${keyRecord._id}:minute`, 60),
+        redisService.incrementRateLimit(`apikey:${keyRecord._id}:hour`, 3600),
+        redisService.incrementRateLimit(`apikey:${keyRecord._id}:day`, 86400),
+      ]);
+
+      const exceeded = [
+        [minute.count, limits.requestsPerMinute, "minute"],
+        [hour.count, limits.requestsPerHour, "hour"],
+        [day.count, limits.requestsPerDay, "day"],
+      ].find(([count, limit]) => count > limit);
+
+      if (exceeded) {
+        throw new ApiError(429, `Rate limit exceeded for ${exceeded[2]}`, {
+          window: exceeded[2],
+          limit: exceeded[1],
+          count: exceeded[0],
         });
       }
+
+      const rateLimitCheck = {
+        allowed: true,
+        remaining: {
+          minute: Math.max(0, limits.requestsPerMinute - minute.count),
+          hourly: Math.max(0, limits.requestsPerHour - hour.count),
+          daily: Math.max(0, limits.requestsPerDay - day.count),
+        },
+      };
       
       // Check permissions if required
       if (requiredPermissions.length > 0) {
@@ -46,15 +71,38 @@ export const verifyApiKey = (...requiredPermissions) => {
       
       // Check IP whitelist if configured
       if (keyRecord.ipWhitelist.length > 0 && !keyRecord.ipWhitelist.includes('*')) {
-        const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
-        const isAllowed = keyRecord.ipWhitelist.some(allowedIP => {
-          if (allowedIP.includes('/')) {
-            // CIDR notation - basic check
-            const [network, mask] = allowedIP.split('/');
-            return clientIP.startsWith(network.split('.').slice(0, Math.ceil(parseInt(mask) / 8)).join('.'));
+        const clientIP = req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress;
+        const ipToBigInt = (address) => {
+          const normalized = address?.startsWith("::ffff:") ? address.slice(7) : address;
+          const version = net.isIP(normalized);
+          if (!version) return null;
+          if (version === 4) {
+            return normalized.split(".").reduce((value, octet) => (value << 8n) + BigInt(Number(octet)), 0n);
           }
-          return clientIP === allowedIP;
-        });
+          const groups = normalized.split("::");
+          const left = groups[0] ? groups[0].split(":").filter(Boolean) : [];
+          const right = groups[1] ? groups[1].split(":").filter(Boolean) : [];
+          const missing = 8 - left.length - right.length;
+          const expanded = [...left, ...Array(Math.max(0, missing)).fill("0"), ...right];
+          return expanded.reduce((value, group) => (value << 16n) + BigInt(parseInt(group || "0", 16)), 0n);
+        };
+        const isIPAllowed = (address, rule) => {
+          const [network, prefixText] = rule.split("/");
+          const addressValue = ipToBigInt(address);
+          const networkValue = ipToBigInt(network);
+          if (addressValue === null || networkValue === null) return false;
+          const addressVersion = net.isIP(address?.startsWith("::ffff:") ? address.slice(7) : address);
+          const networkVersion = net.isIP(network?.startsWith("::ffff:") ? network.slice(7) : network);
+          if (addressVersion !== networkVersion) return false;
+          if (prefixText === undefined) return addressValue === networkValue;
+          const bits = Number(prefixText);
+          const maxBits = addressVersion === 4 ? 32 : 128;
+          if (!Number.isInteger(bits) || bits < 0 || bits > maxBits) return false;
+          if (bits === 0) return true;
+          const shift = BigInt(maxBits - bits);
+          return (addressValue >> shift) === (networkValue >> shift);
+        };
+        const isAllowed = keyRecord.ipWhitelist.some(allowedIP => isIPAllowed(clientIP, allowedIP));
         
         if (!isAllowed) {
           throw new ApiError(403, "IP address not whitelisted");
@@ -63,7 +111,7 @@ export const verifyApiKey = (...requiredPermissions) => {
       
       // Increment usage (async, don't block the request)
       keyRecord.incrementUsage().catch(err => {
-        console.error('Failed to increment API key usage:', err);
+        console.error('Failed to increment API key usage');
       });
       
       // Add API key info to request

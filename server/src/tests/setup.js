@@ -6,7 +6,7 @@ jest.setTimeout(30000);
 process.env.NODE_ENV = 'development';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret';
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-refresh-secret';
-process.env.API_KEY_ENCRYPTION_SECRET = process.env.API_KEY_ENCRYPTION_SECRET || 'test-encryption-secret';
+process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || Buffer.from('1234567890abcdef1234567890abcdef').toString('base64');
 process.env.SKIP_API_KEY_VALIDATION = 'true';
 
 let mongod;

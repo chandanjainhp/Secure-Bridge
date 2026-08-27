@@ -10,23 +10,18 @@ const sendEmail = async ({ to, subject, html, category, templateUuid, templateVa
     html: html,
   };
 
-  // Log the mail options for debugging
-  console.log("Sending email with the following options:", mailOptions);
-
   try {
     const response = await transporter.sendMail(mailOptions);
-    console.log(`${category} email sent successfully`, response);
+    if (process.env.NODE_ENV === "development") console.log(`${category} email sent successfully`);
     return response;
   } catch (error) {
-    console.error(`Error sending ${category} email:`, error);
-    console.log("Error details:", error);
-    throw new Error(`Error sending ${category} email: ${error.message}`);
+    console.error(`Error sending ${category} email`);
+    throw new Error(`Failed to send ${category} email`);
   }
 };
 
 // Send OTP email for login/registration
 export const sendOTPEmail = async (email, otp) => {
-  console.log(`Sending OTP email to ${email}...`);
   return sendEmail({
     to: email,
     subject: "Your Secure Bridge verification code",
@@ -37,7 +32,6 @@ export const sendOTPEmail = async (email, otp) => {
 
 // Send verification email
 export const sendVerificationEmail = async (email, verificationToken) => {
-  console.log(`Sending verification email to ${email}...`);  // Debug log
   return sendEmail({
     to: email,
     subject: "Verify your email",
@@ -48,7 +42,6 @@ export const sendVerificationEmail = async (email, verificationToken) => {
 
 // Send welcome email
 export const sendWelcomeEmail = async (email, name) => {
-  console.log(`Sending welcome email to ${email}...`);  // Debug log
   return sendEmail({
     to: email,
     subject: "Welcome to Secure Bridge",
@@ -59,12 +52,6 @@ export const sendWelcomeEmail = async (email, name) => {
 
 // Send password reset request email
 export const sendPasswordResetEmail = async (email, verificationCode) => {
-  // Debug log to verify email
-  console.log(`Sending password reset request email to: ${email}`); 
-  
-  // Debug log to verify the verification code
-  console.log(`Password reset code: ${verificationCode}`); 
-
   // Send the email
   return sendEmail({
     to: email,
@@ -77,8 +64,6 @@ export const sendPasswordResetEmail = async (email, verificationCode) => {
 
 // Send password reset success email
 export const sendResetSuccessEmail = async (email) => {
-  
-  console.log(`Sending password reset success email to ${email}...`);  // Debug log
   return sendEmail({
     to: email,
     subject: "Password Reset Successful",
@@ -89,7 +74,6 @@ export const sendResetSuccessEmail = async (email) => {
 
 // Send subscription confirmation email for newsletter
 export const sendSubscriptionEmail = async (email) => {
-  console.log(`Sending subscription confirmation to ${email}...`);
   return sendEmail({
     to: email,
     subject: 'Subscribed to Secure Bridge updates',

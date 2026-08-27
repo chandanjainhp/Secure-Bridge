@@ -1,10 +1,6 @@
-const express = require('express');
-const router = express.Router();
-const usageController = require('../controllers/usageController');
-const { verifyJWT } = require('../../../middlewares/auth.middle.js');
-
-router.use(verifyJWT);
-
-router.get('/', usageController.getUsage);
-
-module.exports = router;
+import { Router } from 'express';
+import usageController from '../controllers/usageController.js';
+import { verifyJWT } from '../../../middlewares/auth.middle.js';
+const router = Router();
+router.get('/', verifyJWT, usageController.getUsage);
+export default router;

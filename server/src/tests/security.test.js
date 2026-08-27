@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { app } from '../app.js';
 import { User } from '../models/user.model.js';
-import { ApiKey } from '../models/apikey.model.js';
+import { ApiKey } from '../features/api-key/models/apikey.model.js';
 import jwt from 'jsonwebtoken';
 import { EncryptionService } from '../services/encryptionService.js';
 
@@ -161,7 +161,7 @@ describe('Security Tests - Phase 1', () => {
       );
 
       const res = await request(app)
-        .get('/api/v1/users/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${expiredToken}`)
         .expect(401);
 
@@ -206,7 +206,7 @@ describe('Security Tests - Phase 1', () => {
   describe('Protected Routes', () => {
     it('should return 401 for protected route without valid JWT', async () => {
       const res = await request(app)
-        .get('/api/v1/users/me')
+        .get('/api/v1/auth/me')
         .expect(401);
 
       // Message should contain either 'Unauthorized' or 'Invalid'
@@ -216,7 +216,7 @@ describe('Security Tests - Phase 1', () => {
 
     it('should return 401 for protected route with invalid JWT', async () => {
       const res = await request(app)
-        .get('/api/v1/users/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', 'Bearer invalid-token')
         .expect(401);
 
@@ -227,7 +227,7 @@ describe('Security Tests - Phase 1', () => {
 
     it('should return 200 for protected route with valid JWT', async () => {
       const res = await request(app)
-        .get('/api/v1/users/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
 

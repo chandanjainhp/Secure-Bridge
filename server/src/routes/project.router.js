@@ -5,6 +5,8 @@ import {
   createProjectSchema,
   updateProjectSchema,
   projectIdSchema,
+  sendMessageSchema,
+  createConversationSchema,
 } from "../validation/project.validation.js";
 import {
   getProjects,
@@ -34,11 +36,11 @@ router.patch("/:projectId", validate(updateProjectSchema), updateProject);
 router.delete("/:projectId", validate(projectIdSchema), deleteProject);
 
 router.get("/:projectId/conversations", validate(projectIdSchema), getConversations);
-router.post("/:projectId/conversations", validate(projectIdSchema), createConversation);
+router.post("/:projectId/conversations", validate(createConversationSchema), createConversation);
 router.get("/:projectId/conversations/:conversationId", validate(projectIdSchema), getConversation);
 router.delete("/:projectId/conversations/:conversationId", validate(projectIdSchema), deleteConversation);
 router.get("/:projectId/conversations/:conversationId/messages", validate(projectIdSchema), getConversationMessages);
-router.post("/:projectId/conversations/:conversationId/messages", validate(projectIdSchema), sendMessage);
+router.post("/:projectId/conversations/:conversationId/messages", validate(sendMessageSchema), sendMessage);
 
 router.post("/:projectId/files", validate(projectIdSchema), uploadFile);
 router.get("/:projectId/files", validate(projectIdSchema), getFiles);

@@ -63,7 +63,6 @@ const registerUser = asyncHandler(async (req, res) => {
 
   try {
     await sendVerificationEmail(email, verificationCode);
-    console.log(`Verification email sent to ${email}`);
   } catch (emailError) {
     console.error("Failed to send verification email:", emailError);
   }
@@ -154,10 +153,6 @@ const login = asyncHandler(async (req, res) => {
     );
   }
   if (!user.isVerified && process.env.NODE_ENV === "development") {
-    console.log(
-      "⚠️ Development Mode: Allowing login for unverified user:",
-      user.email,
-    );
   }
 
   // Validate the provided password
@@ -235,7 +230,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     try {
       decodedToken = jwt.verify(
         incomingRefreshToken,
-        process.env.JWT_REFRESH_SECRET || process.env.REFRESH_TOKEN_SECRET,
+        process.env.JWT_REFRESH_SECRET,
       );
     } catch (err) {
       if (err.name === "TokenExpiredError") {
@@ -365,7 +360,6 @@ const verifyEmail = asyncHandler(async (req, res) => {
 
   try {
     await sendWelcomeEmail(user.email, user.fullName);
-    console.log(`Welcome email sent to ${user.email}`);
   } catch (emailError) {
     console.error("Failed to send welcome email:", emailError);
   }
@@ -402,10 +396,8 @@ const resendVerificationEmail = asyncHandler(async (req, res) => {
   try {
     if (purpose === "reset") {
       await sendPasswordResetEmail(email, verificationCode);
-      console.log(`Password reset email sent to ${email}`);
     } else {
       await sendVerificationEmail(email, verificationCode);
-      console.log(`New verification email sent to ${email}`);
     }
   } catch (emailError) {
     console.error("Failed to send email:", emailError);
@@ -445,17 +437,10 @@ const verifyResetCode = asyncHandler(async (req, res) => {
 // RESET PASSWORD (forgot-password flow)
 // ============================================================
 const resetPassword = asyncHandler(async (req, res) => {
-  console.log('🔍 [resetPassword] Request received:', {
-    body: req.body,
-    ip: req.ip
-  });
 
   const { email, otp, newPassword } = req.body;
 
-  console.log('🔍 [resetPassword] Parsed body:', { email, otp, newPassword });
-
   const user = await User.findOne({ email: email.toLowerCase() });
-  console.log('🔍 [resetPassword] User found:', !!user);
 
   if (!user) {
     throw new ApiError(404, "User not found");
@@ -469,14 +454,6 @@ const resetPassword = asyncHandler(async (req, res) => {
   }
 
   const stored = await redisService.getVerificationCode(email, "reset");
-  console.log('🔍 [resetPassword] Redis check result:', {
-    email,
-    otp,
-    stored,
-    match: stored === otp,
-    typeOfStored: typeof stored,
-    typeOfOtp: typeof otp
-  });
 
   if (!stored || stored !== otp) {
     console.error('❌ [resetPassword] OTP mismatch or not found');
@@ -488,8 +465,6 @@ user.refreshToken = null; // Invalidate existing refresh tokens for security
 await user.save({ validateBeforeSave: false });
 
 await redisService.deleteVerificationCode(email, "reset");
-
-console.log('✅ [resetPassword] Password reset successful for:', email);
 
 return res
     .status(200)

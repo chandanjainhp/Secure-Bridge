@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiKey } from "../models/apikey.model.js";
+import usageService from "../features/usage/services/usageService.js";
 import {
   getModelInstance,
   detectProvider,
@@ -162,11 +163,20 @@ class ChatController {
 
     const { model, providerUsed } = instance;
 
-    return await executeCompletion(res, model, messages, {
+    const result = await executeCompletion(res, model, messages, {
       ...params,
       modelName: selectedModel,
       providerUsed,
     });
+
+    // Track usage after successful completion
+    if (userId) {
+      usageService.incrementUsage(userId).catch(err => {
+        console.error('Failed to track usage:', err.message);
+      });
+    }
+
+    return result;
   });
 
   // ---------------------------------------------------------
@@ -526,7 +536,24 @@ class ChatController {
     try {
       const externalKeys = await findExternalKeys(userId);
 
+      // Free-tier fallback: if user has no external keys, try shared OpenAI key
       if (externalKeys.length === 0) {
+        const sharedKey = process.env.SHARED_OPENAI_API_KEY;
+        if (sharedKey && sharedKey !== 'your_shared_openai_api_key_here') {
+          console.log('🔄 Using shared OpenAI key (free-tier fallback)');
+          try {
+            const { createOpenAI } = await import('@ai-sdk/openai');
+            const model = createOpenAI({ apiKey: sharedKey })('gpt-4o-mini');
+            await executeCompletion(res, model, messages, {
+              temperature, max_tokens, stream, top_p, stop,
+              modelName: 'gpt-4o-mini',
+              providerUsed: 'shared-openai',
+            });
+            return true;
+          } catch (sharedError) {
+            console.error('❌ Shared key fallback failed:', sharedError.message);
+          }
+        }
         return false;
       }
 

@@ -41,6 +41,7 @@ describe('Auth API', () => {
     expect(res.status).toBe(201);
     expect(res.body.data).toBeDefined();
     expect(res.body.data.email).toBe('test@example.com');
+    await User.updateOne({ email: 'test@example.com' }, { $set: { isVerified: true } });
   });
 
   it('should login with existing user', async () => {
@@ -82,7 +83,7 @@ describe('Auth API', () => {
   describe('Protected Routes', () => {
     it('should return 401 for protected route without token', async () => {
       const res = await request(app)
-        .get('/api/v1/users/me')
+        .get('/api/v1/auth/me')
         .expect(401);
 
       expect(res.body.message).toBeDefined();
@@ -90,7 +91,7 @@ describe('Auth API', () => {
 
     it('should return 200 for protected route with valid token', async () => {
       const res = await request(app)
-        .get('/api/v1/users/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
 
