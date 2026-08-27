@@ -254,3 +254,6 @@ scratch/
 # docs/generated/
 node_modules
 node_modules
+.env
+server/.env
+.env.docker
