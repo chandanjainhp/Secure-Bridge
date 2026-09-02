@@ -15,12 +15,18 @@ import {
   MODEL_CATALOGS,
   FALLBACK_CHAIN,
 } from "../utils/chat.providers.js";
+import { tryFreeTierFallback } from "../services/chatService.js";
 
 // ============================================================
 // HELPER: Build OpenAI-compatible response from AI SDK result
 // ============================================================
 
-function buildCompletionResponse(result, model, providerUsed, message = "Chat completion successful") {
+function buildCompletionResponse(
+  result,
+  model,
+  providerUsed,
+  message = "Chat completion successful",
+) {
   return new ApiResponse(
     200,
     {
@@ -42,7 +48,7 @@ function buildCompletionResponse(result, model, providerUsed, message = "Chat co
         total_tokens: result.usage?.totalTokens || 0,
       },
     },
-    message
+    message,
   );
 }
 
@@ -51,7 +57,15 @@ function buildCompletionResponse(result, model, providerUsed, message = "Chat co
 // ============================================================
 
 async function executeCompletion(res, model, messages, params) {
-  const { temperature, max_tokens, stream, top_p, stop, model: modelName, providerUsed } = params;
+  const {
+    temperature,
+    max_tokens,
+    stream,
+    top_p,
+    stop,
+    model: modelName,
+    providerUsed,
+  } = params;
 
   if (stream) {
     const result = streamText({
@@ -90,7 +104,13 @@ class ChatController {
   static test = asyncHandler(async (req, res) => {
     return res
       .status(200)
-      .json(new ApiResponse(200, { timestamp: new Date() }, "Chat router is working!"));
+      .json(
+        new ApiResponse(
+          200,
+          { timestamp: new Date() },
+          "Chat router is working!",
+        ),
+      );
   });
 
   // ---------------------------------------------------------
@@ -104,11 +124,11 @@ class ChatController {
     // Determine provider and model
     const { provider: selectedProvider, model: selectedModel } = detectProvider(
       req.body.model,
-      requestedProvider
+      requestedProvider,
     );
 
     console.log(
-      `🤖 Chat request: provider=${selectedProvider}, model=${selectedModel}, messages=${messages.length}, stream=${stream}`
+      `🤖 Chat request: provider=${selectedProvider}, model=${selectedModel}, messages=${messages.length}, stream=${stream}`,
     );
 
     const params = { temperature, max_tokens, stream, top_p, stop };
@@ -119,7 +139,7 @@ class ChatController {
         const { model, providerUsed } = await getModelInstance(
           "local",
           selectedModel,
-          userId
+          userId,
         );
 
         return await executeCompletion(res, model, messages, {
@@ -136,7 +156,7 @@ class ChatController {
           res,
           userId,
           messages,
-          params
+          params,
         );
 
         if (fallbackSent) {
@@ -146,18 +166,22 @@ class ChatController {
         throw new ApiError(
           503,
           "Local LLM server not available and no external API keys configured",
-          { localError: localError.message, fallbackAttempted: true }
+          { localError: localError.message, fallbackAttempted: true },
         );
       }
     }
 
     // --- External provider path ---
-    const instance = await getModelInstance(selectedProvider, selectedModel, userId);
+    const instance = await getModelInstance(
+      selectedProvider,
+      selectedModel,
+      userId,
+    );
 
     if (!instance) {
       throw new ApiError(
         502,
-        `No API key found for provider "${selectedProvider}". Ensure you have an active API key with chat permissions.`
+        `No API key found for provider "${selectedProvider}". Ensure you have an active API key with chat permissions.`,
       );
     }
 
@@ -171,8 +195,8 @@ class ChatController {
 
     // Track usage after successful completion
     if (userId) {
-      usageService.incrementUsage(userId).catch(err => {
-        console.error('Failed to track usage:', err.message);
+      usageService.incrementUsage(userId).catch((err) => {
+        console.error("Failed to track usage:", err.message);
       });
     }
 
@@ -189,13 +213,20 @@ class ChatController {
       local: { available: false, reason: "Local LLM server offline" },
       google: { available: false, reason: "No Google API key configured" },
       openai: { available: false, reason: "No OpenAI API key configured" },
-      anthropic: { available: false, reason: "No Anthropic API key configured" },
+      anthropic: {
+        available: false,
+        reason: "No Anthropic API key configured",
+      },
     };
 
     // Check local LLM
     const localHealthy = await checkLocalLLMHealth();
     if (localHealthy) {
-      providers.local = { available: true, endpoint: LLM_SERVER_URL, status: "connected" };
+      providers.local = {
+        available: true,
+        endpoint: LLM_SERVER_URL,
+        status: "connected",
+      };
     }
 
     // Check user's external API keys
@@ -208,7 +239,9 @@ class ChatController {
 
       const matchKey = (keyword) =>
         userApiKeys.find((key) =>
-          (key.provider || key.externalProvider || "").toLowerCase().includes(keyword)
+          (key.provider || key.externalProvider || "")
+            .toLowerCase()
+            .includes(keyword),
         );
 
       const googleKey = matchKey("google");
@@ -242,7 +275,9 @@ class ChatController {
       }
     }
 
-    const availableCount = Object.values(providers).filter((p) => p.available).length;
+    const availableCount = Object.values(providers).filter(
+      (p) => p.available,
+    ).length;
 
     return res.status(200).json(
       new ApiResponse(
@@ -252,8 +287,10 @@ class ChatController {
           totalProviders: Object.keys(providers).length,
           availableProviders: availableCount,
         },
-        availableCount > 0 ? "Chat providers available" : "No chat providers available"
-      )
+        availableCount > 0
+          ? "Chat providers available"
+          : "No chat providers available",
+      ),
     );
   });
 
@@ -279,7 +316,8 @@ class ChatController {
     // External models (only show if user has active keys)
     if (
       userId &&
-      (provider === "all" || ["google", "openai", "anthropic"].includes(provider))
+      (provider === "all" ||
+        ["google", "openai", "anthropic"].includes(provider))
     ) {
       const userApiKeys = await ApiKey.find({
         userId,
@@ -289,12 +327,19 @@ class ChatController {
 
       const hasProvider = (keyword) =>
         userApiKeys.some((key) =>
-          (key.provider || key.externalProvider || "").toLowerCase().includes(keyword)
+          (key.provider || key.externalProvider || "")
+            .toLowerCase()
+            .includes(keyword),
         );
 
-      if (hasProvider("google") && (provider === "all" || provider === "google")) {
+      if (
+        hasProvider("google") &&
+        (provider === "all" || provider === "google")
+      ) {
         const googleKeys = userApiKeys.filter((key) =>
-          (key.provider || key.externalProvider || "").toLowerCase().includes("google")
+          (key.provider || key.externalProvider || "")
+            .toLowerCase()
+            .includes("google"),
         );
         models.google = {
           available: true,
@@ -303,9 +348,14 @@ class ChatController {
         };
       }
 
-      if (hasProvider("openai") && (provider === "all" || provider === "openai")) {
+      if (
+        hasProvider("openai") &&
+        (provider === "all" || provider === "openai")
+      ) {
         const openaiKeys = userApiKeys.filter((key) =>
-          (key.provider || key.externalProvider || "").toLowerCase().includes("openai")
+          (key.provider || key.externalProvider || "")
+            .toLowerCase()
+            .includes("openai"),
         );
         models.openai = {
           available: true,
@@ -314,9 +364,14 @@ class ChatController {
         };
       }
 
-      if (hasProvider("anthropic") && (provider === "all" || provider === "anthropic")) {
+      if (
+        hasProvider("anthropic") &&
+        (provider === "all" || provider === "anthropic")
+      ) {
         const anthropicKeys = userApiKeys.filter((key) =>
-          (key.provider || key.externalProvider || "").toLowerCase().includes("anthropic")
+          (key.provider || key.externalProvider || "")
+            .toLowerCase()
+            .includes("anthropic"),
         );
         models.anthropic = {
           available: true,
@@ -342,8 +397,8 @@ class ChatController {
           providers: models,
           providerRequested: provider,
         },
-        "Models retrieved successfully"
-      )
+        "Models retrieved successfully",
+      ),
     );
   });
 
@@ -362,8 +417,8 @@ class ChatController {
             url: LLM_SERVER_URL,
           },
         },
-        "LLM server health check completed"
-      )
+        "LLM server health check completed",
+      ),
     );
   });
 
@@ -384,8 +439,8 @@ class ChatController {
             providers: "/api/v1/chat/providers (requires API key)",
           },
         },
-        "Backend server is working! This endpoint does not require authentication."
-      )
+        "Backend server is working! This endpoint does not require authentication.",
+      ),
     );
   });
 
@@ -402,7 +457,11 @@ class ChatController {
     ];
 
     try {
-      const { model } = await getModelInstance("local", DEFAULT_MODELS.local, null);
+      const { model } = await getModelInstance(
+        "local",
+        DEFAULT_MODELS.local,
+        null,
+      );
 
       const result = await generateText({
         model,
@@ -418,8 +477,8 @@ class ChatController {
             response: result.text || "No response content",
             provider: "local",
           },
-          "Local LLM is working!"
-        )
+          "Local LLM is working!",
+        ),
       );
     } catch (error) {
       throw new ApiError(503, "Local LLM test failed", {
@@ -449,7 +508,12 @@ class ChatController {
       keyPrefix,
       hashedKey,
       isExternal: false,
-      permissions: ["chat.access", "chat.completions", "fhe.encrypt", "mcp.connect"],
+      permissions: [
+        "chat.access",
+        "chat.completions",
+        "fhe.encrypt",
+        "mcp.connect",
+      ],
       rateLimit: {
         requestsPerMinute: 100,
         requestsPerHour: 1000,
@@ -468,10 +532,11 @@ class ChatController {
           name: apiKey.name,
           permissions: apiKey.permissions,
           status: apiKey.status,
-          usage: "Include this key in X-API-Key header for authenticated requests",
+          usage:
+            "Include this key in X-API-Key header for authenticated requests",
         },
-        "Demo API key created successfully!"
-      )
+        "Demo API key created successfully!",
+      ),
     );
   });
 
@@ -511,8 +576,8 @@ class ChatController {
             lastUsed: demoKey.usage?.lastUsed || null,
           },
         },
-        "Demo API key retrieved successfully!"
-      )
+        "Demo API key retrieved successfully!",
+      ),
     );
   });
 
@@ -538,20 +603,25 @@ class ChatController {
 
       // Free-tier fallback: if user has no external keys, try shared OpenAI key
       if (externalKeys.length === 0) {
-        const sharedKey = process.env.SHARED_OPENAI_API_KEY;
-        if (sharedKey && sharedKey !== 'your_shared_openai_api_key_here') {
-          console.log('🔄 Using shared OpenAI key (free-tier fallback)');
+        const fallback = await tryFreeTierFallback();
+        if (fallback) {
+          console.log("🔄 Using shared OpenAI key (free-tier fallback)");
           try {
-            const { createOpenAI } = await import('@ai-sdk/openai');
-            const model = createOpenAI({ apiKey: sharedKey })('gpt-4o-mini');
-            await executeCompletion(res, model, messages, {
-              temperature, max_tokens, stream, top_p, stop,
-              modelName: 'gpt-4o-mini',
-              providerUsed: 'shared-openai',
+            await executeCompletion(res, fallback.model, messages, {
+              temperature,
+              max_tokens,
+              stream,
+              top_p,
+              stop,
+              modelName: "gpt-4o-mini",
+              providerUsed: fallback.providerUsed,
             });
             return true;
           } catch (sharedError) {
-            console.error('❌ Shared key fallback failed:', sharedError.message);
+            console.error(
+              "❌ Shared key fallback failed:",
+              sharedError.message,
+            );
           }
         }
         return false;
@@ -559,7 +629,11 @@ class ChatController {
 
       for (const entry of FALLBACK_CHAIN) {
         const keyDoc = externalKeys.find((k) => {
-          const provider = (k.provider || k.externalProvider || "").toLowerCase();
+          const provider = (
+            k.provider ||
+            k.externalProvider ||
+            ""
+          ).toLowerCase();
           return provider.includes(entry.matchKeyword);
         });
 
@@ -575,7 +649,7 @@ class ChatController {
           sdkProvider,
           entry.model,
           userId,
-          keyDoc
+          keyDoc,
         );
 
         if (!instance) continue;

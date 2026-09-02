@@ -22,11 +22,55 @@ import {
 // Create the Express app
 const app = express();
 
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error("Origin is not allowed"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+  ],
+};
 
 // ------------------------------------------------------------
 //  Security headers
 // ------------------------------------------------------------
 app.use(securityMiddleware.helmet);
+
+// ------------------------------------------------------------
+//  CORS configuration
+// ------------------------------------------------------------
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
+app.use((req, res, next) => {
+  const origin = req.get("Origin");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  if (!origin || allowedOrigins.includes(origin)) return next();
+  return res
+    .status(403)
+    .json({
+      success: false,
+      statusCode: 403,
+      message: "Origin is not allowed",
+    });
+});
 
 // ------------------------------------------------------------
 //  Additional security middleware
@@ -36,28 +80,12 @@ app.use(securityMiddleware.compression);
 app.use(securityHeaders);
 app.use(securityLogging);
 
-app.use('/api/', rateLimiters.general);
-app.use('/api/v1/auth/', rateLimiters.auth);
-app.use('/api/v1/auth/', slowDownMiddleware.auth);
-app.use('/api/v1/api-key/', rateLimiters.createApiKey);
-app.use('/api/v1/api-key/', rateLimiters.testApiKey);
-app.use('/api/', slowDownMiddleware.general);
-
-// ------------------------------------------------------------
-//  CORS configuration
-// ------------------------------------------------------------
-const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-app.use((req, res, next) => {
-  const origin = req.get("Origin");
-  if (!origin || allowedOrigins.includes(origin)) return next();
-  return res.status(403).json({ success: false, statusCode: 403, message: "Origin is not allowed" });
-});
-
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use("/api/", rateLimiters.general);
+app.use("/api/v1/auth/", rateLimiters.auth);
+app.use("/api/v1/auth/", slowDownMiddleware.auth);
+app.use("/api/v1/api-key/", rateLimiters.createApiKey);
+app.use("/api/v1/api-key/", rateLimiters.testApiKey);
+app.use("/api/", slowDownMiddleware.general);
 
 // ------------------------------------------------------------
 //  Body parsing middleware
@@ -141,10 +169,13 @@ app.get("/health/llm", async (req, res) => {
     const LLM_SERVER_URL =
       process.env.LLM_SERVER_URL || "http://localhost:1234/v1";
 
-    const response = await fetch(`${LLM_SERVER_URL.replace(/\/$/, "")}/models`, {
-      method: "GET",
-      signal: AbortSignal.timeout(5000),
-    });
+    const response = await fetch(
+      `${LLM_SERVER_URL.replace(/\/$/, "")}/models`,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      },
+    );
 
     if (response.ok) {
       const data = await response.json();
@@ -190,10 +221,13 @@ app.get("/health", async (req, res) => {
     try {
       const LLM_SERVER_URL =
         process.env.LLM_SERVER_URL || "http://localhost:1234/v1";
-      const response = await fetch(`${LLM_SERVER_URL.replace(/\/$/, "")}/models`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
+      const response = await fetch(
+        `${LLM_SERVER_URL.replace(/\/$/, "")}/models`,
+        {
+          method: "GET",
+          signal: AbortSignal.timeout(5000),
+        },
+      );
       llmHealthy = response.ok;
     } catch (error) {
       llmError = error.message;
@@ -280,7 +314,10 @@ app.use("/api/v1/usage", usageRouter);
 app.use((err, req, res, next) => {
   if (err?.name === "MulterError") {
     err.statusCode = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
-    err.message = err.code === "LIMIT_FILE_SIZE" ? "Uploaded file is too large" : "Invalid file upload";
+    err.message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? "Uploaded file is too large"
+        : "Invalid file upload";
   }
   let statusCode = err.statusCode || 500;
   let message = err.message || "Internal Server Error";

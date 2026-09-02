@@ -18,6 +18,7 @@ import {
   DEFAULT_MODELS,
 } from "../utils/chat.providers.js";
 import usageService from "../features/usage/services/usageService.js";
+import { listMcpToolsForAiSdk } from "./mcpClient.js";
 
 /**
  * Build the messages array with the project's systemPrompt prepended.
@@ -38,7 +39,11 @@ function buildMessagesWithSystemPrompt(systemPrompt, history, userContent) {
   // Append conversation history (only user/assistant roles — the schema enforces this)
   if (Array.isArray(history)) {
     for (const msg of history) {
-      if (msg && (msg.role === "user" || msg.role === "assistant") && msg.content) {
+      if (
+        msg &&
+        (msg.role === "user" || msg.role === "assistant") &&
+        msg.content
+      ) {
         messages.push({ role: msg.role, content: msg.content });
       }
     }
@@ -60,7 +65,11 @@ function buildMessagesWithSystemPrompt(systemPrompt, history, userContent) {
  */
 async function fetchAndDecryptKey(userId, provider) {
   if (!userId) return null;
-  return getModelInstance(provider, DEFAULT_MODELS[provider] || provider, userId);
+  return getModelInstance(
+    provider,
+    DEFAULT_MODELS[provider] || provider,
+    userId,
+  );
 }
 
 /**
@@ -131,9 +140,15 @@ async function resolveModel(userId, requestedModel) {
       if (!keyDoc) continue;
 
       const actualProvider = keyDoc.provider || keyDoc.externalProvider;
-      const sdkProvider = actualProvider === "google_ai_studio" ? "google" : actualProvider;
+      const sdkProvider =
+        actualProvider === "google_ai_studio" ? "google" : actualProvider;
 
-      const instance = await getModelInstance(sdkProvider, entry.model, userId, keyDoc);
+      const instance = await getModelInstance(
+        sdkProvider,
+        entry.model,
+        userId,
+        keyDoc,
+      );
       if (instance) {
         return { ...instance, modelName: entry.model };
       }
@@ -165,11 +180,15 @@ async function callLLM(messages, options = {}) {
     throw new Error("No model instance available");
   }
 
+  const mcpTools =
+    process.env.ENABLE_MCP === "true" ? await listMcpToolsForAiSdk() : {};
+
   const result = await generateText({
     model,
     messages,
     temperature,
     maxTokens,
+    ...(Object.keys(mcpTools).length > 0 ? { tools: mcpTools } : {}),
   });
 
   return {
@@ -218,12 +237,16 @@ async function generateChatResponse({
   //     If the user is on the free tier (using the shared key, not their own BYOK key),
   //     we enforce the free-tier message limit. Users with their own BYOK key
   //     (providerUsed !== 'shared-openai') are NOT subject to the limit.
-  if (modelInstance.providerUsed === 'shared-openai' && userId) {
+  if (modelInstance.providerUsed === "shared-openai" && userId) {
     await usageService.checkAndIncrementUsage(userId);
   }
 
   // 2. Build messages with system prompt prepended
-  const messages = buildMessagesWithSystemPrompt(systemPrompt, conversationHistory, userContent);
+  const messages = buildMessagesWithSystemPrompt(
+    systemPrompt,
+    conversationHistory,
+    userContent,
+  );
   messages._modelInstance = modelInstance; // attach for callLLM
 
   // 3. Call the LLM
@@ -231,7 +254,7 @@ async function generateChatResponse({
 
   // 4. Track usage for BYOK users too (non-blocking, don't fail the request if tracking fails)
   //     The free-tier check+increment already happened in step 1b.
-  if (modelInstance.providerUsed !== 'shared-openai' && userId) {
+  if (modelInstance.providerUsed !== "shared-openai" && userId) {
     usageService.incrementUsage(userId).catch((err) => {
       console.error("❌ [chatService] Failed to track usage:", err.message);
     });

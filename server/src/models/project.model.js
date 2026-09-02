@@ -27,7 +27,11 @@ const projectSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true, maxlength: 100 },
     description: { type: String, trim: true, maxlength: 500, default: "" },
     model: { type: String, trim: true, default: "local" },
-    systemPrompt: { type: String, trim: true, default: "You are a helpful AI assistant." },
+    systemPrompt: {
+      type: String,
+      trim: true,
+      default: "You are a helpful AI assistant.",
+    },
     temperature: { type: Number, default: 0.7, min: 0, max: 1 },
     maxTokens: { type: Number, default: 2048, min: 256, max: 8192 },
     conversationCount: { type: Number, default: 0, min: 0 },
@@ -65,4 +69,5 @@ projectSchema.set("toObject", {
   },
 });
 
-export const Project = mongoose.model("Project", projectSchema);
+export const Project =
+  mongoose.models.Project || mongoose.model("Project", projectSchema);
